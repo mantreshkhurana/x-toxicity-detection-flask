@@ -125,7 +125,6 @@ The toxicity detection model uses a CountVectorizer for text feature extraction 
 ```txt
 x-toxicity-detection-flask/
 ├── app.py                 # main flask application
-├── setup.py               # env file setup helper
 ├── models/
 │   └── hate_speech_model.csv
 ├── static/
