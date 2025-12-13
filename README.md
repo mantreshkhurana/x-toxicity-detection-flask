@@ -54,8 +54,8 @@ No API keys required! This app uses Nitter instances to fetch tweets.
 ### Using Virtual Environment (Recommended)
 
 ```bash
-git clone https://github.com/mantreshkhurana/twitter-toxicity-detection-flask.git
-cd twitter-toxicity-detection-flask
+git clone https://github.com/mantreshkhurana/x-toxicity-detection-flask.git
+cd x-toxicity-detection-flask
 python -m venv venv
 source venv/bin/activate  # on windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -65,8 +65,8 @@ python app.py
 ### Without Virtual Environment
 
 ```bash
-git clone https://github.com/mantreshkhurana/twitter-toxicity-detection-flask.git
-cd twitter-toxicity-detection-flask
+git clone https://github.com/mantreshkhurana/x-toxicity-detection-flask.git
+cd x-toxicity-detection-flask
 pip install -r requirements.txt
 python app.py
 ```
@@ -97,14 +97,14 @@ python app.py -p 8000
 
 ## Features
 
-- [x] Search for a Twitter user's recent tweets
+- [x] Search for a X user's recent tweets
 - [x] Dark/Light mode toggle
 - [x] View a pie chart for profile's toxicity ratio
 - [x] View user's profile picture, name, username, following and followers count
 - [x] View images in tweets
 - [x] View retweets and likes count for each tweet
 - [x] View the date and time of each tweet
-- [x] Twitter-like feed layout
+- [x] X-like feed layout
 - [x] Simple bot protection
 - [x] Native GUI window support
 - [x] No API keys required (uses Nitter scraping)
@@ -112,7 +112,7 @@ python app.py -p 8000
 
 ## How It Works
 
-1. Enter a Twitter/X username and the number of tweets to analyze
+1. Enter a X/X username and the number of tweets to analyze
 2. The app scrapes tweets from available Nitter instances
 3. Each tweet is analyzed using a logistic regression model trained on hate speech data
 4. Tweets are displayed with color coding (green for non-toxic, red for toxic)
@@ -123,7 +123,7 @@ The toxicity detection model uses a CountVectorizer for text feature extraction 
 ## Project Structure
 
 ```txt
-twitter-toxicity-detection-flask/
+x-toxicity-detection-flask/
 ├── app.py                 # main flask application
 ├── setup.py               # env file setup helper
 ├── models/
@@ -162,8 +162,8 @@ Contributions are welcome! You can contribute to this project by forking it and 
 After forking:
 
 ```bash
-git clone https://github.com/<your-username>/twitter-toxicity-detection-flask.git
-cd twitter-toxicity-detection-flask
+git clone https://github.com/<your-username>/x-toxicity-detection-flask.git
+cd x-toxicity-detection-flask
 git checkout -b <your-branch-name>
 # after adding your changes
 git add .
