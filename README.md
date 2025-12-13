@@ -28,6 +28,10 @@ It has a [Window GUI](#window-gui) version which can also be used to do the same
 
 
 
+https://github.com/user-attachments/assets/7793ebed-c52b-44f0-b24f-63f0a958e833
+
+
+
 ### Screenshots
 
 | Light | Dark |
