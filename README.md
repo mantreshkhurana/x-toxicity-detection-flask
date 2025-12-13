@@ -116,7 +116,7 @@ python app.py -p 8000
 
 ## How It Works
 
-1. Enter a X/X username and the number of tweets to analyze
+1. Enter a Twitter/X username and the number of tweets to analyze
 2. The app scrapes tweets from available Nitter instances
 3. Each tweet is analyzed using a logistic regression model trained on hate speech data
 4. Tweets are displayed with color coding (green for non-toxic, red for toxic)
