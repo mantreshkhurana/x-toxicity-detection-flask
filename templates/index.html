@@ -1,97 +1,79 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>Twitter Toxicity Detection</title>
-    <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
-  </head>
-  <body class="light">
-    <header>
-      <a href="/"><h1>Twitter Toxicity Detection</h1></a>
-      <div class="toggle-switch">
-        <input type="checkbox" id="toggle" />
-        <label for="toggle"></label>
-      </div>
-    </header>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>X Toxicity Detection</title>
+  <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="light">
+  <header>
+    <a href="/" class="header-brand">
+      <img src="/images/logo.png" alt="Logo" class="header-logo">
+      <h1>X Toxicity Detection</h1>
+    </a>
+    <div class="toggle-switch">
+      <input type="checkbox" id="toggle">
+      <label for="toggle"></label>
+    </div>
+  </header>
 
+  <main>
     <div class="search-bar">
       <div class="image-container">
-        <img
-          src="{{ url_for('static', filename='images/hate_speech.svg') }}"
-          height="300"
-          alt="Hate Speech"
-        />
+        <img src="{{ url_for('static', filename='images/hate_speech.svg') }}" height="280" alt="Hate Speech">
       </div>
       <form action="/results" method="POST">
         <div class="search-container">
-          <input
-            type="text"
-            placeholder="Twitter username..."
-            name="username"
-            required
-          />
-          <input
-            type="number"
-            placeholder="No. of tweets to fetch..."
-            name="posts"
-            min="1"
-            max="100"
-            value="10"
-            required
-          />
+          <input type="text" placeholder="Enter username" name="username" autocomplete="off" required>
+          <input type="number" name="posts" min="1" max="100" value="10" required>
           <button type="submit" id="search-button" disabled>Search</button>
         </div>
       </form>
     </div>
 
     <div class="bot-protection">
-      <form>
-        <span id="bot-calculation"></span>
-        <input
-          type="number"
-          placeholder="Solution..."
-          name="bot_protection"
-          required
-        />
-        <span class="error-message" id="bot-protection-error" style="display: none;">Invalid solution</span>
-      </form>
-      <p>Complete the solution before searching.</p>
+      <span id="bot-calculation"></span>
+      <input type="number" placeholder="Answer" name="bot_protection" required>
+      <span class="error-message" id="bot-protection-error" style="display: none;">Wrong answer</span>
+      <p>Solve to enable search</p>
     </div>
-    
-    <footer>
-      <p>
-        Created by
-        <a href="https://github.com/mantreshkhurana" target="_blank"
-          >Mantresh Khurana</a
-        >
-      </p>
-    </footer>
+  </main>
 
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
-    <script>
-      document.addEventListener("DOMContentLoaded", function () {
-        var botProtectionInput = document.querySelector('input[name="bot_protection"]');
-        var botCalculation = document.getElementById("bot-calculation");
-        var searchButton = document.getElementById("search-button");
-        var errorSpan = document.getElementById("bot-protection-error");
+  <footer>
+    <p>Created by <a href="https://github.com/mantreshkhurana" target="_blank">Mantresh Khurana</a></p>
+  </footer>
 
-        var operand1 = Math.floor(Math.random() * 10) + 1;
-        var operand2 = Math.floor(Math.random() * 10) + 1;
-        var operator = Math.random() < 0.5 ? "+" : "-";
-        var result = operator === "+" ? operand1 + operand2 : operand1 - operand2;
+  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      var botInput = document.querySelector('input[name="bot_protection"]');
+      var botCalc = document.getElementById("bot-calculation");
+      var searchBtn = document.getElementById("search-button");
+      var errorMsg = document.getElementById("bot-protection-error");
 
-        botCalculation.textContent = operand1 + " " + operator + " " + operand2;
+      var a = Math.floor(Math.random() * 10) + 1;
+      var b = Math.floor(Math.random() * 10) + 1;
+      var op = Math.random() < 0.5 ? "+" : "-";
+      var answer = op === "+" ? a + b : a - b;
 
-        botProtectionInput.addEventListener("input", function () {
-          if (parseInt(botProtectionInput.value) === result) {
-            searchButton.disabled = false;
-            errorSpan.style.display = "none";
+      botCalc.textContent = a + " " + op + " " + b + " = ?";
+
+      botInput.addEventListener("input", function() {
+        if (parseInt(botInput.value) === answer) {
+          searchBtn.disabled = false;
+          errorMsg.style.display = "none";
+        } else {
+          searchBtn.disabled = true;
+          if (botInput.value !== "") {
+            errorMsg.style.display = "block";
           } else {
-            searchButton.disabled = true;
-            errorSpan.style.display = "block";
+            errorMsg.style.display = "none";
           }
-        });
+        }
       });
-    </script>
-  </body>
+    });
+  </script>
+</body>
 </html>

@@ -1,7 +1,8 @@
 pandas==1.5.3
 flask==2.2.3
 scikit-learn==1.2.2
-tweepy==4.14.0
+requests
+beautifulsoup4
 python-dotenv==1.0.0
 pywebview==4.1
 Werkzeug==2.2.2

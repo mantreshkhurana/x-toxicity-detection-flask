@@ -1,210 +1,326 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Twitter Toxicity Detection - Results</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ tweets[0].user.name }} - X Toxicity Detection</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@3.3.2/dist/chart.min.js"></script>
+  <style>
+    .chart-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1000;
+      background: rgba(91, 112, 131, 0.4);
+    }
+    .chart-modal.active {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .chart-modal-content {
+      position: relative;
+      width: 90%;
+      max-width: 400px;
+      padding: 24px;
+      border-radius: 16px;
+      text-align: center;
+    }
+    body.light .chart-modal-content {
+      background: #fff;
+    }
+    body.dark .chart-modal-content {
+      background: #16181c;
+    }
+    .chart-modal-content h3 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .chart-modal-content .chart-subtitle {
+      color: #536471;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+    .chart-modal-content canvas {
+      max-width: 100%;
+      margin: 0 auto;
+    }
+    .chart-modal-close {
+      position: absolute;
+      top: 12px;
+      right: 16px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      font-size: 20px;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: #536471;
+      transition: background 0.2s, color 0.2s;
+    }
+    .chart-modal-close:hover {
+      background: rgba(29, 155, 240, 0.1);
+      color: #1d9bf0;
+    }
+    .chart-stats {
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid;
+    }
+    body.light .chart-stats {
+      border-color: #eff3f4;
+    }
+    body.dark .chart-stats {
+      border-color: #2f3336;
+    }
+    .chart-stat {
+      text-align: center;
+    }
+    .chart-stat-value {
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .chart-stat-value.safe {
+      color: #00ba7c;
+    }
+    .chart-stat-value.toxic {
+      color: #f4212e;
+    }
+    .chart-stat-label {
+      font-size: 13px;
+      color: #536471;
+    }
+  </style>
 </head>
 <body class="light">
   <header>
-    <a href="/"><h1>Twitter Toxicity Detection</h1></a>
+    <a href="/" class="header-brand">
+      <img src="/images/logo.png" alt="Logo" class="header-logo">
+      <h1>X Toxicity Detection</h1>
+    </a>
     <div class="toggle-switch">
-      <input type="checkbox" id="toggle" />
+      <input type="checkbox" id="toggle">
       <label for="toggle"></label>
     </div>
-    <button id="popup-button"><i class="fas fa-key"></i></button>
   </header>
 
   <div class="results">
     <div class="profile">
-      <img src="{{ tweets[0].user.profile_image_url_https }}" height="80" width="80" alt="{{ tweets[0].user.name }}" />
+      <img src="{{ tweets[0].user.profile_image_url_https }}" alt="{{ tweets[0].user.name }}">
     </div>
     <h1>{{ tweets[0].user.name }}</h1>
     <p>@{{ username }}</p>
-    <p>{{ following_count }} Following • {{ followers_count }} Followers</p>
-    <p>Number of posts fetched: {{ num_total }}</p>
-    <p>Number of hateful posts: {{ num_hateful }}</p>
-    <p>Hate Speech Ratio: {{ hate_speech_ratio }}%</p>
+    <p>{{ following_count }} Following · {{ followers_count }} Followers</p>
+    <p>{{ num_total }} posts analyzed · {{ num_hateful }} flagged · {{ hate_speech_ratio }}% toxic</p>
     <div class="chart-button">
-      <a href="#"><i class="fas fa-chart-pie"></i></a>
+      <a href="#" id="open-chart" title="View toxicity chart">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <path d="M11 2v20c-5.07-.5-9-4.79-9-10s3.93-9.5 9-10zm2.03 0v8.99H22c-.47-4.74-4.24-8.52-8.97-8.99zm0 11.01V22c4.74-.47 8.5-4.25 8.97-8.99h-8.97z"/>
+        </svg>
+      </a>
     </div>
 
-    <br>
     <hr>
-    <br>
 
     {% for tweet in tweets %}
-    <div class="tweet {% if is_toxic(tweet.full_text) %}red{% else %}green{% endif %}">
-      <div class="avatar">
-        <img src="{{ tweet.user.profile_image_url_https }}" alt="{{ tweet.user.name }}" />
-      </div>
-      <div class="content">
-        <div class="header">
-          <div class="tweet-url">
-            <a href="{{ tweet.tweet_url }}" target="_blank">
-              <i class="fas fa-external-link-alt rounded-icon"></i>
-            </a>
-          </div>
-          <span class="name">{{ tweet.user.name }}</span>
-          <span class="username">@{{ tweet.user.screen_name }}</span>
-          <br>
-          <span class="timestamp">{{ tweet.created_at.strftime('%I:%M %p - %d %b %Y') }}</span>
+    <div class="tweet-card {% if is_toxic(tweet.full_text) %}toxic{% else %}safe{% endif %}">
+      <div class="tweet-card-inner">
+        <div class="tweet-avatar">
+          <img src="{{ tweet.user.profile_image_url_https }}" alt="{{ tweet.user.name }}" onerror="this.src='https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'">
         </div>
-        <p class="tweet-text">
-          {% if 'http' in tweet.full_text %}
-            {% for word in tweet.full_text.split() %}
-              {% if 'http' in word %}
-                <a href="{{ word }}" target="_blank">{{ word }}</a>
+        <div class="tweet-main">
+          <div class="tweet-header">
+            <div class="tweet-author">
+              <span class="tweet-author-name">{{ tweet.user.name }}</span>
+              <svg class="verified-badge" viewBox="0 0 22 22" aria-label="Verified account" style="display: none;"><g><path d="M20.396 11c-.018-.646-.215-1.275-.57-1.816-.354-.54-.852-.972-1.438-1.246.223-.607.27-1.264.14-1.897-.131-.634-.437-1.218-.882-1.687-.47-.445-1.053-.75-1.687-.882-.633-.13-1.29-.083-1.897.14-.273-.587-.704-1.086-1.245-1.44S11.647 1.62 11 1.604c-.646.017-1.273.213-1.813.568s-.969.854-1.24 1.44c-.608-.223-1.267-.272-1.902-.14-.635.13-1.22.436-1.69.882-.445.47-.749 1.055-.878 1.688-.13.633-.08 1.29.144 1.896-.587.274-1.087.705-1.443 1.245-.356.54-.555 1.17-.574 1.817.02.647.218 1.276.574 1.817.356.54.856.972 1.443 1.245-.224.606-.274 1.263-.144 1.896.13.634.433 1.218.877 1.688.47.443 1.054.747 1.687.878.633.132 1.29.084 1.897-.136.274.586.705 1.084 1.246 1.439.54.354 1.17.551 1.816.569.647-.016 1.276-.213 1.817-.567s.972-.854 1.245-1.44c.604.239 1.266.296 1.903.164.636-.132 1.22-.447 1.68-.907.46-.46.776-1.044.908-1.681s.075-1.299-.165-1.903c.586-.274 1.084-.705 1.439-1.246.354-.54.551-1.17.569-1.816zM9.662 14.85l-3.429-3.428 1.293-1.302 2.072 2.072 4.4-4.794 1.347 1.246z"></path></g></svg>
+            </div>
+            <span class="tweet-author-handle">@{{ tweet.user.screen_name }}</span>
+            <span class="tweet-dot">·</span>
+            <span class="tweet-time">{{ tweet.created_at.strftime('%b %d') }}</span>
+          </div>
+          <div class="tweet-content">
+            <p class="tweet-text">
+              {% if 'http' in tweet.full_text %}
+                {% for word in tweet.full_text.split() %}
+                  {% if 'http' in word %}
+                    <a href="{{ word }}" target="_blank" class="tweet-link">{{ word }}</a>
+                  {% else %}
+                    {{ word }}
+                  {% endif %}
+                {% endfor %}
               {% else %}
-                {{ word }}
+                {% if 'RT' in tweet.full_text %}
+                  {{ tweet.full_text.replace('RT', 'Repost') }}
+                {% else %}
+                  {{ tweet.full_text }}
+                {% endif %}
               {% endif %}
-            {% endfor %}
-          {% else %}
-            {% if 'RT' in tweet.full_text %}
-              {{ tweet.full_text.replace('RT', 'Retweet') }}
-            {% else %}
-              {{ tweet.full_text }}
-            {% endif %}
-          {% endif %}
-        </p>
+            </p>
+          </div>
 
-        <div class="tweet-media">
-          {% if tweet.entities.media is defined %}
+          {% if tweet.entities and tweet.entities.media %}
+          <div class="tweet-media-container">
             {% for media in tweet.entities.media %}
               {% if media.type == 'photo' %}
-                <img src="{{ media.media_url_https }}" alt="Tweet Image" />
+                <img src="{{ media.media_url_https }}" alt="Media" class="tweet-media-img">
               {% elif media.type == 'video' %}
-                <video controls>
+                <video controls class="tweet-media-video">
                   {% for variant in media.video_info.variants %}
                     {% if variant.content_type == 'video/mp4' %}
-                      <source src="{{ variant.url }}" type="video/mp4" />
+                      <source src="{{ variant.url }}" type="video/mp4">
                     {% endif %}
                   {% endfor %}
-                  Your browser does not support the video tag.
                 </video>
               {% endif %}
             {% endfor %}
+          </div>
           {% endif %}
-        </div>
 
-        <div class="actions">
-          <i class="far fa-heart"></i>
-          <span class="count">{{ format_number(tweet.favorite_count) }}</span>
-          <i class="fas fa-retweet"></i>
-          <span class="count">{{ format_number(tweet.retweet_count) }}</span>
+          <div class="tweet-actions">
+            <div class="tweet-action tweet-action-reply">
+              <div class="tweet-action-icon">
+                <svg viewBox="0 0 24 24"><g><path d="M1.751 10c0-4.42 3.584-8 8.005-8h4.366c4.49 0 8.129 3.64 8.129 8.13 0 2.96-1.607 5.68-4.196 7.11l-8.054 4.46v-3.69h-.067c-4.49.1-8.183-3.51-8.183-8.01zm8.005-6c-3.317 0-6.005 2.69-6.005 6 0 3.37 2.77 6.08 6.138 6.01l.351-.01h1.761v2.3l5.087-2.81c1.951-1.08 3.163-3.13 3.163-5.36 0-3.39-2.744-6.13-6.129-6.13H9.756z"></path></g></svg>
+              </div>
+            </div>
+            <div class="tweet-action tweet-action-retweet">
+              <div class="tweet-action-icon">
+                <svg viewBox="0 0 24 24"><g><path d="M4.5 3.88l4.432 4.14-1.364 1.46L5.5 7.55V16c0 1.1.896 2 2 2H13v2H7.5c-2.209 0-4-1.79-4-4V7.55L1.432 9.48.068 8.02 4.5 3.88zM16.5 6H11V4h5.5c2.209 0 4 1.79 4 4v8.45l2.068-1.93 1.364 1.46-4.432 4.14-4.432-4.14 1.364-1.46 2.068 1.93V8c0-1.1-.896-2-2-2z"></path></g></svg>
+              </div>
+              <span class="tweet-action-count">{{ format_number(tweet.retweet_count) }}</span>
+            </div>
+            <div class="tweet-action tweet-action-like">
+              <div class="tweet-action-icon">
+                <svg viewBox="0 0 24 24"><g><path d="M16.697 5.5c-1.222-.06-2.679.51-3.89 2.16l-.805 1.09-.806-1.09C9.984 6.01 8.526 5.44 7.304 5.5c-1.243.07-2.349.78-2.91 1.91-.552 1.12-.633 2.78.479 4.82 1.074 1.97 3.257 4.27 7.129 6.61 3.87-2.34 6.052-4.64 7.126-6.61 1.111-2.04 1.03-3.7.477-4.82-.561-1.13-1.666-1.84-2.908-1.91zm4.187 7.69c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z"></path></g></svg>
+              </div>
+              <span class="tweet-action-count">{{ format_number(tweet.favorite_count) }}</span>
+            </div>
+            <div class="tweet-action tweet-action-share">
+              <a href="{{ tweet.tweet_url }}" target="_blank" title="View on X">
+                <div class="tweet-action-icon">
+                  <svg viewBox="0 0 24 24"><g><path d="M12 2.59l5.7 5.7-1.41 1.42L13 6.41V16h-2V6.41l-3.3 3.3-1.41-1.42L12 2.59zM21 15l-.02 3.51c0 1.38-1.12 2.49-2.5 2.49H5.5C4.11 21 3 19.88 3 18.5V15h2v3.5c0 .28.22.5.5.5h12.98c.28 0 .5-.22.5-.5L19 15h2z"></path></g></svg>
+                </div>
+              </a>
+            </div>
+          </div>
         </div>
+      </div>
+      <div class="tweet-toxicity-indicator">
+        {% set score = get_toxicity_score(tweet.full_text) %}
+        {% if is_toxic(tweet.full_text) %}
+          <span class="toxicity-badge toxic">{{ score }}% Toxic</span>
+        {% else %}
+          <span class="toxicity-badge safe">{{ score }}% Safe</span>
+        {% endif %}
       </div>
     </div>
     {% endfor %}
   </div>
 
-  <div id="popup" class="popup">
-    <form class="popup-content">
-      <h3>API Keys</h3>
-      <p>
-        Restart the server after saving the API keys.
-      </p>
-      <span class="close">&times;</span>
-      <input type="text" id="consumerKey" name="consumerKey" placeholder="Consumer Key">
-      <input type="text" id="consumerSecret" name="consumerSecret" placeholder="Consumer Secret">
-      <input type="text" id="accessToken" name="accessToken" placeholder="Access Token">
-      <input type="text" id="accessTokenSecret" name="accessTokenSecret" placeholder="Access Token Secret">
-      <input type="submit" value="Save">
-    </form>
+  <div class="chart-modal" id="chart-modal">
+    <div class="chart-modal-content">
+      <button class="chart-modal-close" id="close-chart">&times;</button>
+      <h3>Toxicity Analysis</h3>
+      <p class="chart-subtitle">@{{ username }}</p>
+      <canvas id="toxicity-chart" width="280" height="280"></canvas>
+      <div class="chart-stats">
+        <div class="chart-stat">
+          <div class="chart-stat-value safe">{{ num_total - num_hateful }}</div>
+          <div class="chart-stat-label">Safe posts</div>
+        </div>
+        <div class="chart-stat">
+          <div class="chart-stat-value toxic">{{ num_hateful }}</div>
+          <div class="chart-stat-label">Toxic posts</div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <br><br>
   <footer>
-    <p>
-      Created by <a href="https://github.com/mantreshkhurana" target="_blank">Mantresh Khurana</a>
-    </p>
+    <p>Created by <a href="https://github.com/mantreshkhurana" target="_blank">Mantresh Khurana</a></p>
   </footer>
 
   <script>
-    document.querySelector('.chart-button a').addEventListener('click', function() {
-      var popupWindow = window.open('', 'Chart', 'width=450,height=480');
-      var ctx = popupWindow.document.createElement('canvas');
-      popupWindow.document.body.appendChild(ctx);
-      var myPieChart = new Chart(ctx, {
-        type: 'pie',
+    var chartInstance = null;
+    var modal = document.getElementById('chart-modal');
+    var openBtn = document.getElementById('open-chart');
+    var closeBtn = document.getElementById('close-chart');
+    var ratio = {{ hate_speech_ratio }};
+
+    function isDarkMode() {
+      return document.body.classList.contains('dark');
+    }
+
+    function createChart() {
+      var ctx = document.getElementById('toxicity-chart').getContext('2d');
+      var textColor = isDarkMode() ? '#e7e9ea' : '#0f1419';
+
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+
+      chartInstance = new Chart(ctx, {
+        type: 'doughnut',
         data: {
-          labels: ['Non-Hateful', 'Hateful'],
-          datasets: [
-            {
-              data: [100 - {{ hate_speech_ratio }}, {{ hate_speech_ratio }}],
-              backgroundColor: ['#00FF40', '#FF0037'],
-            },
-          ],
+          labels: ['Safe', 'Toxic'],
+          datasets: [{
+            data: [100 - ratio, ratio],
+            backgroundColor: ['#00ba7c', '#f4212e'],
+            borderWidth: 0,
+            hoverOffset: 4
+          }]
         },
         options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          cutout: '60%',
           plugins: {
             legend: {
-              position: 'top',
-            },
-            title: {
-              display: true,
-              text: 'Hate Speech Ratio',
-            },
-          },
-        },
+              position: 'bottom',
+              labels: {
+                color: textColor,
+                font: { size: 14 },
+                padding: 16
+              }
+            }
+          }
+        }
       });
-      myPieChart.update();
+    }
+
+    openBtn.addEventListener('click', function(e) {
+      e.preventDefault();
+      modal.classList.add('active');
+      createChart();
+    });
+
+    closeBtn.addEventListener('click', function() {
+      modal.classList.remove('active');
+    });
+
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) {
+        modal.classList.remove('active');
+      }
+    });
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && modal.classList.contains('active')) {
+        modal.classList.remove('active');
+      }
     });
   </script>
-  
-  <script>
-    document.getElementById('popup-button').addEventListener('click', function() {
-      document.getElementById('popup').style.display = 'block';
-    });
-
-    document.querySelector('.close').addEventListener('click', function() {
-      document.getElementById('popup').style.display = 'none';
-    });
-
-    async function fetchApiKeys() {
-      const response = await fetch('/api/keys');
-      const data = await response.json();
-      return data;
-    }
-
-    async function saveApiKeys(apiKeys) {
-      const response = await fetch('/api/keys', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(apiKeys)
-      });
-      const data = await response.json();
-      return data;
-    }
-
-    async function fillApiKeys() {
-      const apiKeys = await fetchApiKeys();
-      document.getElementById('consumerKey').value = apiKeys.CONSUMER_KEY;
-      document.getElementById('consumerSecret').value = apiKeys.CONSUMER_SECRET;
-      document.getElementById('accessToken').value = apiKeys.ACCESS_TOKEN;
-      document.getElementById('accessTokenSecret').value = apiKeys.ACCESS_TOKEN_SECRET;
-    }
-
-    document.querySelector('.popup-content').addEventListener('submit', async function(event) {
-      event.preventDefault();
-      const apiKeys = {
-        CONSUMER_KEY: document.getElementById('consumerKey').value,
-        CONSUMER_SECRET: document.getElementById('consumerSecret').value,
-        ACCESS_TOKEN: document.getElementById('accessToken').value,
-        ACCESS_TOKEN_SECRET: document.getElementById('accessTokenSecret').value
-      };
-      await saveApiKeys(apiKeys);
-      document.getElementById('popup').style.display = 'none';
-    });
-
-    document.getElementById('popup-button').addEventListener('click', function() {
-      fillApiKeys();
-    });
-  </script>
-
   <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>
