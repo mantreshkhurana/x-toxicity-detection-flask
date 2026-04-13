@@ -1,4 +1,5 @@
 import os
+import pickle
 import re
 import pandas as pd
 from flask import Flask, render_template, request, send_from_directory
@@ -8,18 +9,20 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import FeatureUnion
 import argparse
 from datetime import datetime
 load_dotenv()
 
 debug = os.getenv('DEBUG_MODE')
 
-# argument parser setup
-parser = argparse.ArgumentParser()
-parser.add_argument("-w", "--window", action="store_true", help="show the application in a window gui")
-parser.add_argument("-p", "--port", type=int, default=5000, help="specify the port number, default is 5000")
-
-args = parser.parse_args()
+# argument parser setup — only parse when executed directly so WSGI servers
+# (gunicorn, uwsgi) that import `app:app` are not confused by their own argv.
+def _parse_cli_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-w", "--window", action="store_true", help="show the application in a window gui")
+    parser.add_argument("-p", "--port", type=int, default=int(os.getenv("PORT", 5000)), help="specify the port number, default is 5000")
+    return parser.parse_args()
 
 # nitter instances to try
 NITTER_INSTANCES = [
@@ -296,37 +299,60 @@ def preprocess_text(text):
     text = ' '.join(text.split())
     return text
 
-# load training data
-df = pd.read_csv('models/hate_speech_model.csv')
-
-# split into features and target
-x = df['text'].apply(preprocess_text)
-y = df['is_toxic'].map({'Toxic': 1, 'Not Toxic': 0})
+VECTORIZER_PATH = 'models/vectorizer.pkl'
+MODEL_PATH = 'models/toxicity_model.pkl'
+META_PATH = 'models/model_meta.pkl'
+MULTILINGUAL_CSV = 'models/multilingual_toxicity.csv'
+LEGACY_CSV = 'models/hate_speech_model.csv'
 
 toxicity = 0
 
-# use TF-IDF vectorizer with n-grams for better feature extraction
-vectorizer = TfidfVectorizer(
-    max_features=5000,
-    ngram_range=(1, 2),  # unigrams and bigrams
-    min_df=2,
-    max_df=0.95,
-    sublinear_tf=True
-)
-x_vectorized = vectorizer.fit_transform(x)
 
-# train/test split
-x_train, x_test, y_train, y_test = train_test_split(
-    x_vectorized, y, test_size=0.2, random_state=42)
+def _train_from_csv(csv_path):
+    """Fallback: train a simple TF-IDF + LogReg model from a labeled CSV."""
+    frame = pd.read_csv(csv_path)
+    x = frame['text'].apply(preprocess_text)
+    y = frame['is_toxic'].map({'Toxic': 1, 'Not Toxic': 0})
+    vec = TfidfVectorizer(
+        max_features=5000,
+        ngram_range=(1, 2),
+        min_df=2,
+        max_df=0.95,
+        sublinear_tf=True,
+    )
+    x_vec = vec.fit_transform(x)
+    x_train, _, y_train, _ = train_test_split(
+        x_vec, y, test_size=0.2, random_state=42
+    )
+    clf = LogisticRegression(
+        max_iter=1000, C=1.0, class_weight='balanced', solver='lbfgs'
+    )
+    clf.fit(x_train, y_train)
+    return vec, clf
 
-# train improved model with balanced class weights
-model = LogisticRegression(
-    max_iter=1000,
-    C=1.0,
-    class_weight='balanced',
-    solver='lbfgs'
-)
-model.fit(x_train, y_train)
+
+if os.path.exists(VECTORIZER_PATH) and os.path.exists(MODEL_PATH):
+    with open(VECTORIZER_PATH, 'rb') as f:
+        vectorizer = pickle.load(f)
+    with open(MODEL_PATH, 'rb') as f:
+        model = pickle.load(f)
+    if os.path.exists(META_PATH):
+        with open(META_PATH, 'rb') as f:
+            meta = pickle.load(f)
+        print(
+            f"Loaded multilingual model: {meta.get('n_samples')} samples, "
+            f"{len(meta.get('languages', []))} languages, "
+            f"macro F1 {meta.get('macro_f1', 0):.3f}"
+        )
+    else:
+        print("Loaded persisted toxicity model.")
+else:
+    csv_path = MULTILINGUAL_CSV if os.path.exists(MULTILINGUAL_CSV) else LEGACY_CSV
+    print(
+        f"No persisted model found; training fallback from {csv_path}. "
+        "Run `python train_multilingual.py` for the full multilingual model."
+    )
+    vectorizer, model = _train_from_csv(csv_path)
 
 app = Flask(__name__)
 
@@ -417,6 +443,7 @@ def results():
     )
 
 if __name__ == '__main__':
+    args = _parse_cli_args()
     if args.window:
         import webview
         app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -429,4 +456,4 @@ if __name__ == '__main__':
         )
         webview.start()
     else:
-        app.run(debug=debug, port=args.port)
+        app.run(host='0.0.0.0', debug=debug, port=args.port)

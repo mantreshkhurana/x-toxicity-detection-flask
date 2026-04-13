@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: x-toxicity-detection
+    runtime: python
+    plan: free
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt && python train_multilingual.py"
+    startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.6
+      - key: DEBUG_MODE
+        value: "False"
+      - key: HF_HUB_DISABLE_TELEMETRY
+        value: "1"
