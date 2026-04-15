@@ -24,13 +24,13 @@ It has a [Window GUI](#window-gui) version which can also be used to do the same
 
 ## Demo
 
+### Demo Website
+
+You can try the live demo of the app here: [https://x-toxicity-detection-flask.onrender.com/](https://x-toxicity-detection-flask.onrender.com/)
+
 ### Demo Video
 
-
-
-https://github.com/user-attachments/assets/7793ebed-c52b-44f0-b24f-63f0a958e833
-
-
+<https://github.com/user-attachments/assets/7793ebed-c52b-44f0-b24f-63f0a958e833>
 
 ### Screenshots
 
