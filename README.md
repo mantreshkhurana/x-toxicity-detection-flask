@@ -26,7 +26,7 @@ It has a [Window GUI](#window-gui) version which can also be used to do the same
 
 ### Demo Website
 
-You can try the live demo of the app here: [https://x-toxicity-detection-flask.onrender.com/](https://x-toxicity-detection-flask.onrender.com/)
+You can try the live demo of the app here: [https://x-toxicity-detection.onrender.com](https://x-toxicity-detection.onrender.com)
 
 ### Demo Video
 
