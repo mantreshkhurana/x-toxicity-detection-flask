@@ -62,7 +62,7 @@ export default async function HomePage() {
         </h2>
         <p className="mt-2 mb-6 text-[15px] leading-6 text-muted">
           Enter a username to score their recent posts in{" "}
-          {model ? model.languages.length : 55}+ languages.
+          {model ? model.languages.length : 56} languages.
         </p>
         <SearchForm autoFocus />
       </section>

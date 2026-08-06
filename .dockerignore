@@ -1,0 +1,21 @@
+.git
+.github
+venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.env
+.env.local
+
+# rebuilt inside the image
+web/node_modules/
+web/.next/
+web/out/
+
+# not needed at runtime
+assets/
+images/
+models/holdout.csv
+models/multilingual_toxicity.csv
+*.md
+!README.md

@@ -1,19 +1,55 @@
+# Two services: the Python API that owns the model, and the Next.js interface
+# wired to it. Deploy this file as a Render Blueprint and both get built.
+#
+# You only ever open x-toxicity-web — it serves the interface *and* forwards
+# /api/* to x-toxicity-api server-side, so the browser talks to one origin and
+# there is no CORS setup. Same single-URL behaviour as `python app.py` locally.
+#
+# Prefer one service instead of two? Use the Dockerfile — see README,
+# "Deploying".
+
 services:
   - type: web
-    name: x-toxicity-detection
+    name: x-toxicity-api
     runtime: python
     plan: free
-    # The trained model is committed to models/, so the build only trains when
-    # it is missing — and then only from the small corpus, since the free plan
+    region: oregon
+    # The trained model is committed to models/, so this only trains when the
+    # pickles are missing — and then from the small corpus, since the free plan
     # cannot afford the 1.4 GB download the full preset needs.
     buildCommand: "pip install --upgrade pip && pip install -r requirements.txt && python train_multilingual.py --preset fast --skip-if-exists"
+    # gunicorn imports `app:app`, so the frontend-spawning __main__ block never
+    # runs here — the frontend is the service below.
     startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2"
+    healthCheckPath: /api/model
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.6
+        value: "3.12.6"
       - key: DEBUG_MODE
         value: "False"
       - key: HF_HUB_DISABLE_TELEMETRY
         value: "1"
       - key: TOXICITY_BACKEND
         value: "linear"
+
+  - type: web
+    name: x-toxicity-web
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: web
+    buildCommand: "npm ci && npm run build"
+    startCommand: "npm run start -- --port $PORT --hostname 0.0.0.0"
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      # Render hands over a bare hostname; the frontend turns
+      # TOXICITY_API_HOST into an https:// URL when TOXICITY_API_URL is unset.
+      - key: TOXICITY_API_HOST
+        fromService:
+          name: x-toxicity-api
+          type: web
+          property: host

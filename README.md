@@ -4,10 +4,7 @@
 
 Analyzes X (formerly Twitter) user posts for toxicity with a machine learning model that works in **56 languages**. **No Twitter/X API required** - posts come from X's public syndication endpoint.
 
-Two frontends over one Python service:
-
-- a **Next.js + React app** in [web/](web/) that mirrors X's real interface - three-column layout, Default / Dim / Lights out themes, timeline and profile patterns
-- the original **Flask-rendered UI**, including a [Window GUI](#window-gui) version that runs without a browser
+Two processes, one command, one port: a Python service that owns the model and a **Next.js + React** interface in [web/](web/) built to look and behave like X itself - three-column layout, Default / Dim / Lights out themes, timeline and profile patterns. `python app.py` starts both and serves them on the port you choose.
 
 ## Table of Contents
 
@@ -15,11 +12,11 @@ Two frontends over one Python service:
   - [Demo](#demo)
     - [Demo Video](#demo-video)
     - [Screenshots](#screenshots)
-    - [Pie Chart](#pie-chart)
-    - [Window GUI](#window-gui)
+    - [Mobile](#mobile)
   - [Installation](#installation)
   - [Usage](#usage)
-  - [Next.js Frontend](#nextjs-frontend)
+  - [Frontend](#frontend)
+    - [Deploying](#deploying)
   - [Features](#features)
   - [The Toxicity Model](#the-toxicity-model)
     - [Accuracy](#accuracy)
@@ -41,30 +38,25 @@ You can try the live demo of the app here: [https://x-toxicity-detection.onrende
 
 ### Demo Video
 
+Recorded on the previous server-rendered interface; the flow is the same, the interface is now the React app shown below.
+
 <https://github.com/user-attachments/assets/7793ebed-c52b-44f0-b24f-63f0a958e833>
 
 ### Screenshots
 
-| Light | Dark |
+| Light | Lights out |
 | :---: | :---: |
-| ![App Screenshot](./assets/screenshots/screenshot-1-light.png) | ![App Screenshot](./assets/screenshots/screenshot-1-dark.png)
-| ![App Screenshot](./assets/screenshots/screenshot-2-light.png) | ![App Screenshot](./assets/screenshots/screenshot-2-dark.png)
+| ![Home](./assets/screenshots/screenshot-1-light.png) | ![Home](./assets/screenshots/screenshot-1-dark.png) |
+| ![Profile analysis](./assets/screenshots/screenshot-2-light.png) | ![Profile analysis](./assets/screenshots/screenshot-2-dark.png) |
+| ![Multilingual text analysis](./assets/screenshots/screenshot-3-light.png) | ![Multilingual text analysis](./assets/screenshots/screenshot-3-dark.png) |
 
-### Pie Chart
+### Mobile
 
-You can see a pie chart which portrays the percentage of tweets that are toxic and non-toxic. It can be viewed by clicking on the view Pie Chart button which is located below `following` and `followers` count.
-
-<a align="left">
-  <img src="./assets/screenshots/screenshot-3-chart.png" width="300">
-</a>
-
-### Window GUI
-
-![App Screenshot](./assets/screenshots/screenshot-4-app.png)
+<img src="./assets/screenshots/screenshot-4-mobile.png" width="320" alt="Profile analysis on a phone">
 
 ## Installation
 
-No API keys required! This app reads X's public syndication endpoint to fetch posts.
+No API keys required. You need **Python 3.11+** and **Node.js 20+** (the interface is a Next.js app).
 
 ### Using Virtual Environment (Recommended)
 
@@ -86,44 +78,41 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Navigate to [http://127.0.0.1:5000/](http://127.0.0.1:5000/) in your web browser to use the app.
+`python app.py` starts everything and installs the frontend's npm dependencies on first run. Open [http://127.0.0.1:3000](http://127.0.0.1:3000).
+
+**One port serves the whole app.** The interface takes the port you choose and forwards `/api/*` to the Python service behind it, which stays on localhost. Ctrl-C stops both.
 
 ## Usage
 
 ```bash
-python app.py
+python app.py                  # whole app on :3000
+python app.py --port 8000      # whole app on :8000
+python app.py --prod           # production build instead of dev mode
+python app.py --window         # desktop window (needs pywebview)
+python app.py --no-web         # API alone on --port, no interface
 ```
 
-Run the app in a window GUI:
+| Flag | Default | Meaning |
+| :-- | :-- | :-- |
+| `-p`, `--port` | `3000` | **the port you open** - serves the interface and `/api/*` |
+| `--api-port` | `5000` | private port for the API behind it, on localhost only |
+| `--prod` | off | `next build` + `next start` instead of dev mode |
+| `-w`, `--window` | off | desktop window instead of a browser tab |
+| `--no-web` | off | serve the API alone on `--port` (for split deployments) |
 
-```bash
-python app.py --window
-# or
-python app.py -w
+Both ports also read `PORT` and `API_PORT` from the environment. If either is taken, the next free port is used and printed rather than crashing:
+
+```txt
+[api] port 5000 is in use, using 5001
+[web] port 3000 is in use, using 3001
+
+  Open http://127.0.0.1:3001
+  (API behind it on http://127.0.0.1:5001)
 ```
 
-Use a custom port:
+## Frontend
 
-```bash
-python app.py --port 8000
-# or
-python app.py -p 8000
-```
-
-## Next.js Frontend
-
-A React frontend built to look and behave like X itself lives in [web/](web/). It renders what the Python service returns - the model never moves out of Python.
-
-```bash
-# terminal 1 - the analysis service
-python app.py
-
-# terminal 2 - the React frontend
-cd web
-npm install
-cp .env.example .env.local     # TOXICITY_API_URL, defaults to http://127.0.0.1:5000
-npm run dev                    # http://localhost:3000
-```
+The interface is a Next.js + React app in [web/](web/), built to look and behave like X: three-column layout, Default / Dim / Lights out themes, timeline, profile header and tab bar, bottom nav on phones. It renders what the Python service returns - the model never moves out of Python.
 
 | Route | What it does |
 | :-- | :-- |
@@ -131,25 +120,64 @@ npm run dev                    # http://localhost:3000
 | `/u/[username]` | Profile header, scored timeline, Posts / Flagged / Safe tabs, toxicity donut, language mix |
 | `/analyze` | Paste any text, one post per line, scored in any supported language |
 | `/model` | Model card: pipeline, language list, measured accuracy |
+| `/api/*` | Forwarded to the Python service, which is why one port is enough |
 
-It ships X's three themes (Default, Dim, Lights out), a three-column desktop layout with a bottom nav on phones, skeleton loading that matches the real layout, and badges that distinguish toxic from safe by icon and wording as well as colour. See [web/README.md](web/README.md) for details.
+To work on the frontend alone, against an API you started separately:
+
+```bash
+python app.py --no-web &       # API on :3000... or wherever you point it
+cd web
+npm install
+cp .env.example .env.local     # TOXICITY_API_URL
+npm run dev
+```
+
+See [web/README.md](web/README.md) for the design notes.
+
+### Deploying
+
+**Render, two services (default).** Deploy [render.yaml](render.yaml) as a Blueprint and both halves build:
+
+| Service | Runtime | Build | Serves |
+| :-- | :-- | :-- | :-- |
+| `x-toxicity-api` | Python | `pip install -r requirements.txt` + train if the model is missing | JSON API |
+| `x-toxicity-web` | Node | `npm ci && npm run build` (rootDir `web`) | the interface |
+
+`x-toxicity-web`'s URL is the app - that is the one to open and share, and it forwards `/api/*` to `x-toxicity-api` for you, exactly like the single port locally. Render injects the API's hostname as `TOXICITY_API_HOST`, and the frontend turns that into an `https://` URL on its own, so there is nothing to wire up by hand. The browser only ever talks to one origin, so no CORS configuration is needed. Gunicorn imports `app:app`, which means the frontend-spawning code in `__main__` never runs on the API service.
+
+On Render's free plan both services sleep when idle, so the first request after a nap waits for two cold starts.
+
+**One service instead of two.** [Dockerfile](Dockerfile) builds the frontend and the API into a single image, the same shape as running it locally: the interface takes the public `$PORT`, the API stays on `API_PORT` inside the container. Point a Render service (or Fly, or a VPS) at it:
+
+```yaml
+services:
+  - type: web
+    name: x-toxicity-detection
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+```
+
+```bash
+docker build -t x-toxicity-detection .
+docker run -p 3000:3000 -e PORT=3000 x-toxicity-detection
+```
+
+**Anywhere else.** Run the API with `python app.py --no-web` (or gunicorn) and the frontend with `npm run build && npm start`, setting `TOXICITY_API_URL` to wherever the API is reachable.
 
 ## Features
 
-- [x] Search for a X user's recent tweets
+- [x] Search for an X user's recent posts
 - [x] Toxicity detection in 56 languages, with the detected language shown per post
 - [x] Obfuscation-resistant scoring (`f*ck`, `sh1t`, `f u c k`, `looool`, Cyrillic look-alikes)
 - [x] Per-language decision thresholds instead of one global cut-off
-- [x] JSON API for scoring arbitrary text
+- [x] Score arbitrary text in any supported language from `/analyze`
+- [x] Toxicity donut and language breakdown per profile
+- [x] Filter a timeline by flagged / safe
+- [x] X's three themes: Default, Dim and Lights out
+- [x] Responsive down to phone width, with a bottom nav
+- [x] JSON API for scoring text or a whole profile
 - [x] Optional transformer backend for maximum accuracy
-- [x] Dark/Light mode toggle
-- [x] View a pie chart for profile's toxicity ratio
-- [x] View user's profile picture, name, username, following and followers count
-- [x] View images in tweets
-- [x] View retweets and likes count for each tweet
-- [x] View the date and time of each tweet
-- [x] X-like feed layout
-- [x] Simple bot protection
 - [x] Native GUI window support
 - [x] No API keys required (public syndication endpoint)
 - [ ] Images/Videos toxicity detection
@@ -270,12 +298,14 @@ What is achievable, and what this model does: score every language it can, refus
 
 ## API
 
+Reachable on the same port as the interface (`:3000` by default), because `/api/*` is forwarded through to the Python service:
+
 ```bash
 # what model is answering
-curl http://127.0.0.1:5000/api/model
+curl http://127.0.0.1:3000/api/model
 
 # score arbitrary text in any supported language
-curl -X POST http://127.0.0.1:5000/api/analyze \
+curl -X POST http://127.0.0.1:3000/api/analyze \
   -H 'Content-Type: application/json' \
   -d '{"texts": ["you are trash", "gracias por compartir", "ты тупой урод"]}'
 ```
@@ -294,24 +324,25 @@ curl -X POST http://127.0.0.1:5000/api/analyze \
 A whole profile, scored, is one call — this is what the Next.js frontend renders:
 
 ```bash
-curl "http://127.0.0.1:5000/api/profile/jack?posts=20"
+curl "http://127.0.0.1:3000/api/profile/jack?posts=20"
 ```
 
 It returns the user, a summary (totals, toxic ratio, average score, language mix), the model info, and every post with its own score, language and threshold.
 
 ## How It Works
 
-1. Enter a Twitter/X username and the number of tweets to analyze
-2. The app fetches those posts from X's public syndication endpoint - no API key, no login
-3. Every post is scored in one batched pass: language detected, toxicity probability computed, threshold applied for that language
-4. Tweets are displayed with color coding (green for non-toxic, red for toxic) and a language badge
-5. An overall toxicity ratio is calculated and can be viewed as a pie chart
+1. `python app.py` starts the Next.js interface on the port you chose and the Python API behind it on localhost; `/api/*` is forwarded through, so one URL serves everything
+2. Enter a username and how many posts to analyze
+3. The API fetches those posts from X's public syndication endpoint - no API key, no login
+4. Every post is scored in one batched pass: language detected, toxicity probability computed, threshold applied for that language
+5. The frontend renders the timeline with per-post scores and language badges, plus a toxicity donut and language breakdown for the profile
 
 ## Project Structure
 
 ```txt
 x-toxicity-detection-flask/
-├── app.py                 # flask app: scraping, JSON API, server-rendered UI
+├── app.py                 # JSON API + scraping; starts the frontend
+├── frontend.py            # supervises the Next.js child process
 ├── toxicity.py            # normalization, language detection, scoring backends
 ├── train_multilingual.py  # trains and persists the model
 ├── evaluate_model.py      # accuracy report + multilingual smoke test
@@ -320,24 +351,6 @@ x-toxicity-detection-flask/
 │   ├── toxicity_model.pkl # soft-voting linear ensemble
 │   ├── model_meta.pkl     # metrics, languages, per-language thresholds
 │   └── holdout.csv        # held-out test split
-├── static/
-│   ├── css/
-│   │   ├── style.css      # main stylesheet (imports modules)
-│   │   ├── base.css       # reset and typography
-│   │   ├── header.css     # header and navigation
-│   │   ├── search.css     # search bar and bot protection
-│   │   ├── profile.css    # profile card styles
-│   │   ├── tweet.css      # tweet card styles (X-like UI)
-│   │   └── components.css # footer, modals, errors
-│   ├── js/
-│   │   └── script.js
-│   └── images/
-│       ├── favicon.ico
-│       └── hate_speech.svg
-├── templates/
-│   ├── index.html
-│   ├── results.html
-│   └── error.html
 ├── web/                   # next.js + react frontend (see web/README.md)
 │   ├── app/               # routes: /, /u/[username], /analyze, /model
 │   ├── components/        # sidebar, timeline, tweet card, donut, badges

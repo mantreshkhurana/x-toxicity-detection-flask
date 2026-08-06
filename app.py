@@ -1,8 +1,19 @@
+"""JSON API for the toxicity detector.
+
+The interface lives in `web/` (Next.js). `python app.py` runs both: the
+interface takes the public port you choose, this API sits behind it on a
+private one, and the interface forwards `/api/*` through to it — so the whole
+app answers on a single URL.
+"""
+
 import os
 import re
 import json
 import html as html_lib
-from flask import Flask, jsonify, render_template, request, send_from_directory
+import socket
+import subprocess
+import sys
+from flask import Flask, jsonify, redirect, request
 import requests
 from dotenv import load_dotenv
 from email.utils import parsedate_to_datetime
@@ -13,15 +24,107 @@ from toxicity import get_classifier
 
 load_dotenv()
 
-debug = os.getenv('DEBUG_MODE')
+# "DEBUG_MODE=False" is a string, and every non-empty string is truthy — this
+# used to turn the debugger *on* whenever the variable was set at all.
+debug = os.getenv('DEBUG_MODE', 'False').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 # argument parser setup — only parse when executed directly so WSGI servers
 # (gunicorn, uwsgi) that import `app:app` are not confused by their own argv.
 def _parse_cli_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-w", "--window", action="store_true", help="show the application in a window gui")
-    parser.add_argument("-p", "--port", type=int, default=int(os.getenv("PORT", 5000)), help="specify the port number, default is 5000")
+    parser = argparse.ArgumentParser(
+        description="Run the toxicity detector: interface and API on one port.",
+    )
+    parser.add_argument(
+        "-p", "--port", type=int, default=int(os.getenv("PORT", 3000)),
+        help="the port you open — serves the interface and /api/*, default 3000",
+    )
+    parser.add_argument(
+        "--api-port", type=int, default=int(os.getenv("API_PORT", 5000)),
+        help="private port for the API behind the interface, default 5000; "
+             "moves to the next free port if that one is taken",
+    )
+    parser.add_argument(
+        "--no-web", action="store_true",
+        help="serve the API alone on --port, without the interface",
+    )
+    parser.add_argument(
+        "--prod", action="store_true",
+        help="run the interface as a production build instead of dev mode",
+    )
+    parser.add_argument(
+        "-w", "--window", action="store_true",
+        help="open the interface in a desktop window instead of a browser",
+    )
+    parser.add_argument(
+        "--check", action="store_true",
+        help="report whether everything needed to run is present, then exit",
+    )
     return parser.parse_args()
+
+
+def _check_environment(args):
+    """`--check`: say what is and isn't ready, instead of failing at startup."""
+    import platform
+    import shutil
+
+    print("\nEnvironment")
+    print(f"  python           {platform.python_version()} ({platform.machine()})")
+    print(f"  model            {len(classifier.info['languages'])} languages, "
+          f"{classifier.backend.name} backend")
+
+    ok = True
+
+    npm = shutil.which("npm")
+    node = shutil.which("node")
+    if npm and node:
+        version = subprocess.run(
+            [node, "--version"], capture_output=True, text=True
+        ).stdout.strip()
+        print(f"  node             {version} ({node})")
+        major = int(version.lstrip("v").split(".")[0]) if version else 0
+        if major and major < 20:
+            print("                   ! Next.js needs Node 20 or newer")
+            ok = False
+    else:
+        print("  node             NOT FOUND — install Node.js 20+ "
+              "(or run with --no-web)")
+        ok = False
+
+    web_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
+    deps = os.path.isdir(os.path.join(web_dir, 'node_modules'))
+    print(f"  web/node_modules {'present' if deps else 'missing (installed on first run)'}")
+
+    print("\nPorts")
+    for label, port in (('interface', args.port), ('api', args.api_port)):
+        free = _port_is_free(port)
+        resolved = '' if free else f" -> will use {_resolve_port(port, label)}"
+        print(f"  {label:<16} {port} {'free' if free else 'in use'}{resolved}")
+
+    print("\n" + ("Ready. Run: python app.py" if ok else
+                  "Not ready — see the notes above.") + "\n")
+    return 0 if ok else 1
+
+
+def _port_is_free(port, host="127.0.0.1"):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind((host, port))
+            return True
+        except OSError:
+            return False
+
+
+def _resolve_port(preferred, label, host="127.0.0.1"):
+    """First free port at or after `preferred`, so a busy port never crashes us."""
+    for candidate in range(preferred, preferred + 50):
+        if _port_is_free(candidate, host):
+            if candidate != preferred:
+                print(f"[{label}] port {preferred} is in use, using {candidate}")
+            return candidate
+    raise SystemExit(
+        f"[{label}] no free port between {preferred} and {preferred + 49}."
+    )
 
 SYNDICATION_URL = "https://syndication.twitter.com/srv/timeline-profile/screen-name/{username}"
 
@@ -181,7 +284,33 @@ class MediaWrapper:
         self.media_url_https = media_data.get('media_url_https', '')
         self.video_info = None
 
-classifier = get_classifier()
+def _load_classifier():
+    """Load the model, turning the two common failures into plain English."""
+    try:
+        return get_classifier()
+    except FileNotFoundError as exc:
+        raise SystemExit(
+            f"\n  {exc}\n\n"
+            "  Fix: python train_multilingual.py --preset fast\n"
+        )
+    except ImportError as exc:
+        message = str(exc)
+        if "incompatible architecture" in message:
+            raise SystemExit(
+                "\n  Your installed packages were built for a different CPU "
+                "architecture than\n  the Python running them (a Rosetta / "
+                "Apple Silicon mismatch).\n\n"
+                "  Fix: rm -rf venv && python3 -m venv venv && "
+                "source venv/bin/activate\n"
+                "       pip install -r requirements.txt\n"
+            )
+        raise SystemExit(
+            f"\n  A dependency failed to import: {message}\n\n"
+            "  Fix: pip install -r requirements.txt\n"
+        )
+
+
+classifier = _load_classifier()
 _info = classifier.info
 print(
     f"Toxicity model ready: {_info['backend']} backend, "
@@ -190,36 +319,34 @@ print(
     f"macro F1 {(_info['macro_f1'] or 0):.3f}"
 )
 
-app = Flask(__name__)
-
-def format_number(num):
-    if num < 1000:
-        return str(num)
-    elif num >= 1000 and num < 1000000:
-        return '{:.1f}K'.format(num / 1000)
-    elif num >= 1000000 and num < 1000000000:
-        return '{:.1f}M'.format(num / 1000000)
-    else:
-        return '{:.1f}B'.format(num / 1000000000)
-
-
-def is_toxic(text):
-    """Whether text crosses the toxicity threshold for its language"""
-    return classifier.is_toxic(text)
-
-
-def get_toxicity_score(text):
-    """Toxicity probability for text, as a percentage"""
-    return classifier.score(text)
+# No templates, no static files: this process is an API, and `static_folder=None`
+# keeps Flask from advertising a /static route that serves nothing.
+app = Flask(__name__, static_folder=None)
 
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    """Endpoint listing — the human-facing app is the Next.js frontend.
 
-@app.route('/images/<path:filename>')
-def serve_images(filename):
-    return send_from_directory('images', filename)
+    Opening this port in a browser is a natural mistake, so send people to the
+    interface instead of showing them raw JSON.
+    """
+    # Only a client that names text/html gets redirected. Werkzeug's
+    # negotiation treats curl's `Accept: */*` as HTML-willing, which would
+    # break API clients, so the header is matched literally.
+    web_url = os.getenv('WEB_URL')
+    if web_url and 'text/html' in request.headers.get('Accept', ''):
+        return redirect(web_url, code=302)
+
+    return jsonify({
+        'service': 'x-toxicity-detection API',
+        'frontend': os.getenv('WEB_URL', 'http://127.0.0.1:3000'),
+        'endpoints': {
+            'GET /api/model': 'model backend, languages and measured accuracy',
+            'POST /api/analyze': 'score arbitrary text: {"texts": ["..."]}',
+            'GET /api/profile/<username>?posts=20': 'fetch and score a public profile',
+        },
+    })
 
 @app.route('/api/model')
 def api_model():
@@ -314,74 +441,106 @@ def api_profile(username):
         'posts': scored,
     })
 
-@app.route('/results', methods=['GET', 'POST'])
-def results():
-    if request.method == 'GET':
-        return render_template('index.html')
-
-    username = request.form['username']
-    posts = int(request.form['posts'])
+def _start_frontend(public_port, api_port, production):
+    """Bring up the interface, or explain why it could not start."""
+    import frontend
 
     try:
-        tweets, user_info = scrape_nitter_tweets(username, posts)
-    except Exception as e:
-        return render_template('error.html', error=str(e))
+        url = frontend.start(
+            api_port=api_port,
+            web_port=public_port,
+            production=production,
+        )
+    except frontend.FrontendError as exc:
+        print(f"[web] {exc}")
+        return None
 
-    if not tweets:
-        return render_template('error.html', error=f"No tweets found for user @{username}")
+    frontend.install_signal_handlers()
+    os.environ['WEB_URL'] = url
+    return url
 
-    # one batched pass over every post; the template then reads the cached
-    # result off each tweet instead of re-running the model per render
-    analyses = classifier.analyze_batch([tweet.full_text for tweet in tweets])
-    for tweet, analysis in zip(tweets, analyses):
-        tweet.toxicity_score = analysis.score
-        tweet.is_toxic = analysis.is_toxic
-        tweet.language = analysis.language
 
-    num_hateful = sum(1 for a in analyses if a.is_toxic)
-    num_total = len(tweets)
-    hate_speech_ratio = num_hateful / num_total * 100
+def _print_banner(web_url, api_port):
+    """The URL to open, hard to miss — ports move when they are taken."""
+    if web_url:
+        lines = [
+            f"Open  {web_url}",
+            f"API   http://127.0.0.1:{api_port}  (behind the interface)",
+        ]
+    else:
+        lines = [f"API   http://127.0.0.1:{api_port}  (no interface running)"]
 
-    toxicity = sum(a.score for a in analyses) / num_total
-    languages = sorted({a.language for a in analyses if a.language != 'und'})
+    width = max(len(line) for line in lines) + 4
+    print("\n  ┌" + "─" * width + "┐")
+    for line in lines:
+        print(f"  │  {line.ljust(width - 4)}  │")
+    print("  └" + "─" * width + "┘\n")
 
-    user = tweets[0].user
-    name = user.name
-    followers_count = format_number(user.followers_count)
-    following_count = format_number(user.friends_count)
-    tweet_url = tweets[0].tweet_url if tweets else ''
 
-    return render_template('results.html',
-        username=username,
-        posts=posts,
-        num_total=num_total,
-        num_hateful=num_hateful,
-        hate_speech_ratio=round(hate_speech_ratio, 1),
-        tweets=tweets,
-        format_number=format_number,
-        is_toxic=is_toxic,
-        get_toxicity_score=get_toxicity_score,
-        toxicity=round(toxicity, 1),
-        followers_count=followers_count,
-        following_count=following_count,
-        name=name,
-        tweet_url=tweet_url,
-        languages=languages,
-        model_info=classifier.info,
+def _run_window(url):
+    """Desktop window pointed at the frontend. Blocks until it is closed."""
+    import webview
+    import frontend
+
+    if not frontend.wait_until_ready(url):
+        print("[web] frontend did not come up in time; not opening the window")
+        return
+    webview.create_window(
+        "X Toxicity Detection",
+        url,
+        width=1100,
+        height=820,
+        min_size=(600, 700),
     )
+    webview.start()
+
 
 if __name__ == '__main__':
     args = _parse_cli_args()
-    if args.window:
-        import webview
-        app.config["TEMPLATES_AUTO_RELOAD"] = True
-        webview.create_window(
-            "Twitter Toxicity Detection",
-            app,
-            width=850,
-            height=700,
-            min_size=(600, 700),
-        )
-        webview.start()
+
+    if args.check:
+        sys.exit(_check_environment(args))
+
+    if args.no_web:
+        # The API is the public service here: it takes --port and listens
+        # outward, and there is no interface in front of it.
+        api_port, api_host, web_url = args.port, '0.0.0.0', None
     else:
-        app.run(host='0.0.0.0', debug=debug, port=args.port)
+        # The interface is the public service; the API sits behind it on
+        # localhost, reachable only through the interface's /api/* proxy.
+        api_port = _resolve_port(args.api_port, 'api')
+        api_host = '127.0.0.1'
+        public_port = _resolve_port(args.port, 'web', host='0.0.0.0')
+
+        # Flask's reloader runs this module twice; only the child should own
+        # the frontend, otherwise two copies fight over the same port.
+        is_reloader_parent = debug and os.environ.get('WERKZEUG_RUN_MAIN') != 'true'
+        if is_reloader_parent:
+            web_url = None
+        else:
+            web_url = _start_frontend(public_port, api_port, args.prod)
+            if web_url is None:
+                print(f"[web] continuing with the API alone on "
+                      f"http://127.0.0.1:{api_port}")
+
+    window = args.window and web_url is not None
+    if window:
+        try:
+            import webview  # noqa: F401
+        except ImportError:
+            print("[window] pywebview is not installed. Run `pip install pywebview`, "
+                  f"or open {web_url} in a browser.")
+            window = False
+
+    if window:
+        # webview owns the main thread, so Flask serves from a background one
+        import threading
+
+        threading.Thread(
+            target=lambda: app.run(host=api_host, port=api_port, debug=False),
+            daemon=True,
+        ).start()
+        _run_window(web_url)
+    else:
+        _print_banner(web_url, api_port)
+        app.run(host=api_host, debug=debug, port=api_port)

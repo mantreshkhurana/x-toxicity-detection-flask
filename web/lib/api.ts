@@ -5,8 +5,21 @@ import type { ModelInfo, ProfileResponse } from "./types";
  * Requests go out from the server so the browser never talks to Flask
  * directly - no CORS setup, no API host leaking into the client bundle.
  */
-export const API_BASE =
-  process.env.TOXICITY_API_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:5000";
+function resolveApiBase(): string {
+  const explicit = process.env.TOXICITY_API_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+
+  // Platforms that wire services together (Render, Railway) hand over a bare
+  // hostname rather than a URL.
+  const host = process.env.TOXICITY_API_HOST?.trim();
+  if (host) {
+    return host.startsWith("http") ? host.replace(/\/$/, "") : `https://${host}`;
+  }
+
+  return "http://127.0.0.1:5000";
+}
+
+export const API_BASE = resolveApiBase();
 
 export class ApiError extends Error {
   status: number;
