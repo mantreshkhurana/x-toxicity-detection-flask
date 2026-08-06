@@ -21,7 +21,7 @@ export function ThemeSwitch({ compact = false }: { compact?: boolean }) {
     <div
       role="radiogroup"
       aria-label="Display theme"
-      className="flex items-center gap-1 rounded-full border border-line bg-raised p-1"
+      className="flex w-fit flex-col items-center gap-1 rounded-full border border-line bg-raised p-1 xl:w-auto xl:flex-row"
     >
       {THEMES.map((option) => {
         const Icon = ICONS[option];
