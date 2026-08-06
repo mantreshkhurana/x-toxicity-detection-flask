@@ -8,5 +8,6 @@ scipy==1.13.1
 requests==2.32.3
 beautifulsoup4==4.12.3
 python-dotenv==1.0.1
+langdetect==1.0.9
 datasets==3.0.1
 huggingface_hub==0.25.2

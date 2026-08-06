@@ -1,0 +1,174 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design tokens
+
+   X ships three themes, not two: Default (white), Dim (navy) and Lights out
+   (true black). Every surface, line and text colour below is a semantic token
+   so components never hardcode a hex, and all three themes stay in sync.
+--------------------------------------------------------------------------- */
+
+:root,
+[data-theme="light"] {
+  --canvas: #ffffff;
+  --surface: #ffffff;
+  --surface-raised: #f7f9f9;
+  --ink: #0f1419;
+  --ink-muted: #536471;
+  --line: #eff3f4;
+  --hover: rgba(15, 20, 25, 0.05);
+  --scrim: rgba(0, 0, 0, 0.4);
+  --brand: #1d9bf0;
+  --brand-hover: #1a8cd8;
+  --brand-soft: rgba(29, 155, 240, 0.1);
+  --toxic: #f4212e;
+  --toxic-soft: rgba(244, 33, 46, 0.1);
+  --safe: #00ba7c;
+  --safe-soft: rgba(0, 186, 124, 0.1);
+  --warn: #ffd400;
+  --skeleton: rgba(15, 20, 25, 0.08);
+  color-scheme: light;
+}
+
+[data-theme="dim"] {
+  --canvas: #15202b;
+  --surface: #15202b;
+  --surface-raised: #1e2732;
+  --ink: #f7f9f9;
+  --ink-muted: #8b98a5;
+  --line: #38444d;
+  --hover: rgba(255, 255, 255, 0.03);
+  --scrim: rgba(91, 112, 131, 0.4);
+  --brand: #1d9bf0;
+  --brand-hover: #1a8cd8;
+  --brand-soft: rgba(29, 155, 240, 0.15);
+  --toxic: #f4212e;
+  --toxic-soft: rgba(244, 33, 46, 0.15);
+  --safe: #00ba7c;
+  --safe-soft: rgba(0, 186, 124, 0.15);
+  --warn: #ffd400;
+  --skeleton: rgba(255, 255, 255, 0.08);
+  color-scheme: dark;
+}
+
+[data-theme="dark"] {
+  --canvas: #000000;
+  --surface: #000000;
+  --surface-raised: #16181c;
+  --ink: #e7e9ea;
+  --ink-muted: #71767b;
+  --line: #2f3336;
+  --hover: rgba(255, 255, 255, 0.03);
+  --scrim: rgba(91, 112, 131, 0.4);
+  --brand: #1d9bf0;
+  --brand-hover: #1a8cd8;
+  --brand-soft: rgba(29, 155, 240, 0.15);
+  --toxic: #f4212e;
+  --toxic-soft: rgba(244, 33, 46, 0.15);
+  --safe: #00ba7c;
+  --safe-soft: rgba(0, 186, 124, 0.15);
+  --warn: #ffd400;
+  --skeleton: rgba(255, 255, 255, 0.08);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-raised: var(--surface-raised);
+  --color-ink: var(--ink);
+  --color-muted: var(--ink-muted);
+  --color-line: var(--line);
+  --color-hover: var(--hover);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-soft: var(--brand-soft);
+  --color-toxic: var(--toxic);
+  --color-toxic-soft: var(--toxic-soft);
+  --color-safe: var(--safe);
+  --color-safe-soft: var(--safe-soft);
+  --color-warn: var(--warn);
+  --color-skeleton: var(--skeleton);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-inter), "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Keyboard focus stays visible everywhere; pointer focus does not shout. */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--brand-soft);
+}
+
+/* X's scrollbar is thin and themed rather than the browser default. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 9999px;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@keyframes fade-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.skeleton {
+  background: var(--skeleton);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+/* Entrance is staggered per row in TweetCard via an inline delay. */
+.fade-rise {
+  animation: fade-rise 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.spin {
+  animation: spin 700ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

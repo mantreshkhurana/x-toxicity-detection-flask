@@ -1,0 +1,83 @@
+# X Toxicity Detection — web frontend
+
+Next.js (App Router) + React + Tailwind frontend that mirrors X's real interface:
+three-column layout, X's Default / Dim / Lights out themes, and its timeline,
+profile and tab-bar patterns.
+
+The model stays in Python. This app renders what the Flask service at
+`TOXICITY_API_URL` returns and never talks to X directly.
+
+## Run it
+
+Start the Python service first — the frontend has nothing to show without it:
+
+```bash
+cd ..
+python app.py            # http://127.0.0.1:5000
+```
+
+Then:
+
+```bash
+npm install
+cp .env.example .env.local     # point TOXICITY_API_URL at the Flask service
+npm run dev                    # http://localhost:3000
+```
+
+If Flask is on another port, set it once:
+
+```bash
+echo 'TOXICITY_API_URL=http://127.0.0.1:5055' > .env.local
+```
+
+## Routes
+
+| Route | What it does |
+| :-- | :-- |
+| `/` | Search a username, pick how many posts, plus a short explainer |
+| `/u/[username]?posts=20` | Profile header, scored timeline, filter tabs, toxicity donut and language mix |
+| `/analyze` | Paste any text, one post per line, score it in any supported language |
+| `/model` | Model card: pipeline, language list, measured accuracy |
+| `/api/analyze` | Server-side proxy to the Flask endpoint, so the browser stays same-origin |
+
+## Layout
+
+```txt
+web/
+├── app/
+│   ├── layout.tsx              # fonts, theme bootstrap, three-column frame
+│   ├── page.tsx                # home
+│   ├── u/[username]/page.tsx   # profile results (server component)
+│   ├── u/[username]/loading.tsx# skeleton matching the real layout
+│   ├── analyze/page.tsx        # text playground
+│   ├── model/page.tsx          # model card
+│   └── api/analyze/route.ts    # proxy to Flask
+├── components/                 # sidebar, timeline, tweet card, donut, badges…
+└── lib/                        # API client, types, formatting
+```
+
+## Design notes
+
+- **Themes** — X's three themes are semantic CSS variables in `globals.css`.
+  Components only ever reference tokens (`bg-canvas`, `text-muted`,
+  `border-line`), so all three stay in sync. The choice persists in
+  `localStorage` and is applied before paint, so there is no flash.
+- **Colour is never the only signal** — toxic and safe differ by colour, by
+  icon shape and by the word in the badge.
+- **Touch targets** are 44px or larger, with 8px+ spacing; the mobile bottom
+  nav respects the safe-area inset.
+- **Motion** is 200-300ms, transform/opacity only, staggered 30ms per row, and
+  fully disabled under `prefers-reduced-motion`.
+- **Loading** uses a skeleton whose boxes match the real layout's dimensions so
+  nothing shifts when data arrives.
+- **Fonts** — X's Chirp is proprietary; Inter is the closest freely licensable
+  match and covers Latin, Cyrillic and Greek.
+
+## Build
+
+```bash
+npm run build && npm start
+```
+
+Set `TOXICITY_API_URL` in the deployment environment to wherever the Python
+service is reachable.

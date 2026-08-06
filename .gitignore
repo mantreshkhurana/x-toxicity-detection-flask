@@ -5,3 +5,14 @@ dist/
 build/
 .vercel
 venv/
+
+# next.js frontend
+web/node_modules/
+web/.next/
+web/out/
+web/.env.local
+web/next-env.d.ts
+
+# regenerable training artifacts
+models/holdout.csv
+models/multilingual_toxicity.csv

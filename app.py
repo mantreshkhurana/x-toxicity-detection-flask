@@ -1,20 +1,16 @@
 import os
-import pickle
 import re
 import json
 import html as html_lib
-import pandas as pd
-from flask import Flask, render_template, request, send_from_directory
-from sklearn.model_selection import train_test_split
+from flask import Flask, jsonify, render_template, request, send_from_directory
 import requests
-from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from email.utils import parsedate_to_datetime
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import FeatureUnion
 import argparse
 from datetime import datetime
+
+from toxicity import get_classifier
+
 load_dotenv()
 
 debug = os.getenv('DEBUG_MODE')
@@ -56,6 +52,14 @@ def scrape_nitter_tweets(username, count=10):
         )
     except requests.RequestException as e:
         raise Exception(f"Network error: {e}")
+
+    if response.status_code == 429:
+        raise Exception(
+            "X is rate-limiting this IP right now. Wait a few minutes and try again."
+        )
+
+    if response.status_code == 404:
+        raise Exception(f"User @{username} not found")
 
     if response.status_code != 200:
         raise Exception(f"Failed to fetch tweets: HTTP {response.status_code}")
@@ -177,76 +181,14 @@ class MediaWrapper:
         self.media_url_https = media_data.get('media_url_https', '')
         self.video_info = None
 
-# text preprocessing for better toxicity detection
-def preprocess_text(text):
-    """Clean and normalize text for better model performance"""
-    if pd.isna(text):
-        return ''
-    text = str(text).lower()
-    # remove URLs
-    text = re.sub(r'http\S+|www\S+|https\S+', '', text)
-    # remove mentions
-    text = re.sub(r'@\w+', '', text)
-    # remove hashtags but keep the word
-    text = re.sub(r'#(\w+)', r'\1', text)
-    # remove extra whitespace
-    text = ' '.join(text.split())
-    return text
-
-VECTORIZER_PATH = 'models/vectorizer.pkl'
-MODEL_PATH = 'models/toxicity_model.pkl'
-META_PATH = 'models/model_meta.pkl'
-MULTILINGUAL_CSV = 'models/multilingual_toxicity.csv'
-LEGACY_CSV = 'models/hate_speech_model.csv'
-
-toxicity = 0
-
-
-def _train_from_csv(csv_path):
-    """Fallback: train a simple TF-IDF + LogReg model from a labeled CSV."""
-    frame = pd.read_csv(csv_path)
-    x = frame['text'].apply(preprocess_text)
-    y = frame['is_toxic'].map({'Toxic': 1, 'Not Toxic': 0})
-    vec = TfidfVectorizer(
-        max_features=5000,
-        ngram_range=(1, 2),
-        min_df=2,
-        max_df=0.95,
-        sublinear_tf=True,
-    )
-    x_vec = vec.fit_transform(x)
-    x_train, _, y_train, _ = train_test_split(
-        x_vec, y, test_size=0.2, random_state=42
-    )
-    clf = LogisticRegression(
-        max_iter=1000, C=1.0, class_weight='balanced', solver='lbfgs'
-    )
-    clf.fit(x_train, y_train)
-    return vec, clf
-
-
-if os.path.exists(VECTORIZER_PATH) and os.path.exists(MODEL_PATH):
-    with open(VECTORIZER_PATH, 'rb') as f:
-        vectorizer = pickle.load(f)
-    with open(MODEL_PATH, 'rb') as f:
-        model = pickle.load(f)
-    if os.path.exists(META_PATH):
-        with open(META_PATH, 'rb') as f:
-            meta = pickle.load(f)
-        print(
-            f"Loaded multilingual model: {meta.get('n_samples')} samples, "
-            f"{len(meta.get('languages', []))} languages, "
-            f"macro F1 {meta.get('macro_f1', 0):.3f}"
-        )
-    else:
-        print("Loaded persisted toxicity model.")
-else:
-    csv_path = MULTILINGUAL_CSV if os.path.exists(MULTILINGUAL_CSV) else LEGACY_CSV
-    print(
-        f"No persisted model found; training fallback from {csv_path}. "
-        "Run `python train_multilingual.py` for the full multilingual model."
-    )
-    vectorizer, model = _train_from_csv(csv_path)
+classifier = get_classifier()
+_info = classifier.info
+print(
+    f"Toxicity model ready: {_info['backend']} backend, "
+    f"{len(_info['languages'])} languages, "
+    f"{(_info['n_samples'] or 0):,} training samples, "
+    f"macro F1 {(_info['macro_f1'] or 0):.3f}"
+)
 
 app = Flask(__name__)
 
@@ -262,23 +204,13 @@ def format_number(num):
 
 
 def is_toxic(text):
-    """Check if text is toxic using the trained model"""
-    processed = preprocess_text(text)
-    vec = vectorizer.transform([processed])
-    percentage = round((model.predict_proba(vec)[0][1] * 100), 2)
-
-    # threshold of 50% for balanced classification
-    if percentage >= 50.00:
-        return True
-    else:
-        return False
+    """Whether text crosses the toxicity threshold for its language"""
+    return classifier.is_toxic(text)
 
 
 def get_toxicity_score(text):
-    """Get the toxicity probability score for text"""
-    processed = preprocess_text(text)
-    vec = vectorizer.transform([processed])
-    return round((model.predict_proba(vec)[0][1] * 100), 2)
+    """Toxicity probability for text, as a percentage"""
+    return classifier.score(text)
 
 
 @app.route('/')
@@ -288,6 +220,99 @@ def index():
 @app.route('/images/<path:filename>')
 def serve_images(filename):
     return send_from_directory('images', filename)
+
+@app.route('/api/model')
+def api_model():
+    """Which model is answering, in how many languages, and how well."""
+    return jsonify(classifier.info)
+
+@app.route('/api/analyze', methods=['POST'])
+def api_analyze():
+    """Score arbitrary text — handy for checking the model in your own language.
+
+    POST {"text": "..."} or {"texts": ["...", "..."]}
+    """
+    payload = request.get_json(silent=True) or {}
+    texts = payload.get('texts')
+    if texts is None:
+        texts = [payload.get('text', '')]
+    if not isinstance(texts, list):
+        return jsonify({'error': '"texts" must be a list of strings'}), 400
+    texts = [str(t) for t in texts][:200]
+    if not any(t.strip() for t in texts):
+        return jsonify({'error': 'no text provided'}), 400
+
+    results = classifier.analyze_batch(texts)
+    return jsonify({
+        'backend': classifier.backend.name,
+        'results': [r.as_dict() for r in results],
+    })
+
+@app.route('/api/profile/<username>')
+def api_profile(username):
+    """Profile + scored posts as JSON — what the Next.js frontend renders.
+
+    GET /api/profile/<username>?posts=20
+    """
+    try:
+        posts = min(max(int(request.args.get('posts', 20)), 1), 100)
+    except (TypeError, ValueError):
+        posts = 20
+
+    try:
+        tweets, user_info = scrape_nitter_tweets(username, posts)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+    if not tweets:
+        return jsonify({'error': f"No posts found for @{username}"}), 404
+
+    analyses = classifier.analyze_batch([tweet.full_text for tweet in tweets])
+    scored = []
+    for tweet, analysis in zip(tweets, analyses):
+        scored.append({
+            'id': tweet.id_str,
+            'text': tweet.full_text,
+            'created_at': tweet.created_at.isoformat(),
+            'favorite_count': tweet.favorite_count,
+            'retweet_count': tweet.retweet_count,
+            'url': tweet.tweet_url,
+            'media': [
+                {'type': m.type, 'url': m.media_url_https}
+                for m in tweet.entities.media
+            ],
+            'toxicity': {
+                'score': analysis.score,
+                'is_toxic': analysis.is_toxic,
+                'language': analysis.language,
+                'threshold': analysis.threshold,
+            },
+        })
+
+    toxic_count = sum(1 for a in analyses if a.is_toxic)
+    languages = {}
+    for analysis in analyses:
+        languages[analysis.language] = languages.get(analysis.language, 0) + 1
+
+    return jsonify({
+        'user': {
+            'name': user_info['name'],
+            'screen_name': user_info['screen_name'],
+            'avatar': user_info['profile_image_url_https'],
+            'followers_count': user_info['followers_count'],
+            'following_count': user_info['friends_count'],
+        },
+        'summary': {
+            'total': len(scored),
+            'toxic': toxic_count,
+            'safe': len(scored) - toxic_count,
+            'toxic_ratio': round(toxic_count / len(scored) * 100, 1),
+            'average_score': round(sum(a.score for a in analyses) / len(analyses), 1),
+            'languages': dict(sorted(languages.items(), key=lambda kv: -kv[1])),
+        },
+        'model': classifier.info,
+        'posts': scored,
+    })
 
 @app.route('/results', methods=['GET', 'POST'])
 def results():
@@ -305,13 +330,20 @@ def results():
     if not tweets:
         return render_template('error.html', error=f"No tweets found for user @{username}")
 
-    labels = [is_toxic(tweet.full_text) for tweet in tweets]
+    # one batched pass over every post; the template then reads the cached
+    # result off each tweet instead of re-running the model per render
+    analyses = classifier.analyze_batch([tweet.full_text for tweet in tweets])
+    for tweet, analysis in zip(tweets, analyses):
+        tweet.toxicity_score = analysis.score
+        tweet.is_toxic = analysis.is_toxic
+        tweet.language = analysis.language
 
-    num_hateful = sum(labels)
+    num_hateful = sum(1 for a in analyses if a.is_toxic)
     num_total = len(tweets)
     hate_speech_ratio = num_hateful / num_total * 100
 
-    toxicity = sum([get_toxicity_score(tweet.full_text) for tweet in tweets]) / num_total
+    toxicity = sum(a.score for a in analyses) / num_total
+    languages = sorted({a.language for a in analyses if a.language != 'und'})
 
     user = tweets[0].user
     name = user.name
@@ -334,6 +366,8 @@ def results():
         following_count=following_count,
         name=name,
         tweet_url=tweet_url,
+        languages=languages,
+        model_info=classifier.info,
     )
 
 if __name__ == '__main__':

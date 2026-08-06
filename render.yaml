@@ -3,7 +3,10 @@ services:
     name: x-toxicity-detection
     runtime: python
     plan: free
-    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt && python train_multilingual.py"
+    # The trained model is committed to models/, so the build only trains when
+    # it is missing — and then only from the small corpus, since the free plan
+    # cannot afford the 1.4 GB download the full preset needs.
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt && python train_multilingual.py --preset fast --skip-if-exists"
     startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2"
     envVars:
       - key: PYTHON_VERSION
@@ -12,3 +15,5 @@ services:
         value: "False"
       - key: HF_HUB_DISABLE_TELEMETRY
         value: "1"
+      - key: TOXICITY_BACKEND
+        value: "linear"

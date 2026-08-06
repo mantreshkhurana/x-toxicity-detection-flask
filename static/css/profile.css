@@ -96,3 +96,11 @@ body.dark .chart-button a:hover {
 body.dark .chart-button a:hover svg {
   fill: #1d9bf0;
 }
+
+.detected-languages {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #1d9bf0;
+}

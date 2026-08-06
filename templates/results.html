@@ -124,6 +124,11 @@
     <p>@{{ username }}</p>
     <p>{{ following_count }} Following · {{ followers_count }} Followers</p>
     <p>{{ num_total }} posts analyzed · {{ num_hateful }} flagged · {{ hate_speech_ratio }}% toxic</p>
+    {% if languages %}
+    <p class="detected-languages" title="Languages detected in these posts">
+      {{ languages | map('upper') | join(' · ') }}
+    </p>
+    {% endif %}
     <div class="chart-button">
       <a href="#" id="open-chart" title="View toxicity chart">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
@@ -135,7 +140,7 @@
     <hr>
 
     {% for tweet in tweets %}
-    <div class="tweet-card {% if is_toxic(tweet.full_text) %}toxic{% else %}safe{% endif %}">
+    <div class="tweet-card {% if tweet.is_toxic %}toxic{% else %}safe{% endif %}">
       <div class="tweet-card-inner">
         <div class="tweet-avatar">
           <img src="{{ tweet.user.profile_image_url_https }}" alt="{{ tweet.user.name }}" onerror="this.src='https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'">
@@ -217,11 +222,13 @@
         </div>
       </div>
       <div class="tweet-toxicity-indicator">
-        {% set score = get_toxicity_score(tweet.full_text) %}
-        {% if is_toxic(tweet.full_text) %}
-          <span class="toxicity-badge toxic">{{ score }}% Toxic</span>
+        {% if tweet.language and tweet.language != 'und' %}
+          <span class="language-badge" title="Detected language">{{ tweet.language|upper }}</span>
+        {% endif %}
+        {% if tweet.is_toxic %}
+          <span class="toxicity-badge toxic">{{ tweet.toxicity_score }}% Toxic</span>
         {% else %}
-          <span class="toxicity-badge safe">{{ score }}% Safe</span>
+          <span class="toxicity-badge safe">{{ tweet.toxicity_score }}% Safe</span>
         {% endif %}
       </div>
     </div>
