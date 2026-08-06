@@ -111,7 +111,15 @@ body {
 :focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
-  border-radius: 4px;
+}
+
+/* Text fields already turn their border brand-coloured on focus, so the ring
+   would sit on top of an existing cue. */
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible {
+  outline: none;
 }
 
 ::selection {
