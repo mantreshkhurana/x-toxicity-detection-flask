@@ -35,7 +35,8 @@ npm run dev
 | Variable | Meaning |
 | :-- | :-- |
 | `TOXICITY_API_URL` | full URL of the Python API, e.g. `http://127.0.0.1:5000` |
-| `TOXICITY_API_HOST` | bare hostname instead, for hosts that inject one (Render); becomes `https://<host>` |
+| `TOXICITY_API_HOST` | bare hostname instead, for hosts that inject one; a domain becomes `https://<host>`, a private-network name becomes `http://<host>:<TOXICITY_API_PORT or 10000>` |
+| `TOXICITY_API_PORT` | port for `TOXICITY_API_HOST`, when it is not the default |
 
 ## Routes
 

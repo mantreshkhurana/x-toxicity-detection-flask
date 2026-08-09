@@ -7,19 +7,37 @@ import type { ModelInfo, ProfileResponse } from "./types";
  */
 function resolveApiBase(): string {
   const explicit = process.env.TOXICITY_API_URL?.trim();
-  if (explicit) return explicit.replace(/\/$/, "");
+  if (explicit) return normalize(explicit);
 
-  // Platforms that wire services together (Render, Railway) hand over a bare
-  // hostname rather than a URL.
+  // Platforms that wire services together hand over a bare hostname rather
+  // than a URL. Two shapes turn up: a public domain (`api.example.com`) which
+  // is served over TLS, and a private-network name (`x-toxicity-api`) which is
+  // plain HTTP on the service's own port, never 443.
   const host = process.env.TOXICITY_API_HOST?.trim();
   if (host) {
-    return host.startsWith("http") ? host.replace(/\/$/, "") : `https://${host}`;
+    if (/^https?:\/\//i.test(host)) return normalize(host);
+
+    const port = process.env.TOXICITY_API_PORT?.trim();
+    if (host.includes(".")) return normalize(`https://${host}${port ? `:${port}` : ""}`);
+    return normalize(`http://${host}:${port || "10000"}`);
   }
 
   return "http://127.0.0.1:5000";
 }
 
+function normalize(url: string) {
+  return url.replace(/\/+$/, "");
+}
+
 export const API_BASE = resolveApiBase();
+
+// A free-plan service that has spun down answers 502/503 from the platform's
+// router for a few seconds while it boots, and a cold start that has to load
+// the model is slow enough to outlast the default fetch timeout.
+const REQUEST_TIMEOUT_MS = 120_000;
+const WAKE_RETRIES = 2;
+const WAKE_RETRY_DELAY_MS = 3_000;
+const WAKE_STATUSES = new Set([502, 503, 504]);
 
 export class ApiError extends Error {
   status: number;
@@ -27,6 +45,51 @@ export class ApiError extends Error {
   constructor(message: string, status: number) {
     super(message);
     this.status = status;
+  }
+}
+
+export function unreachableMessage() {
+  return process.env.NODE_ENV === "production"
+    ? `Can't reach the analysis service at ${API_BASE}. It may still be starting up — try again in a moment.`
+    : "Can't reach the analysis service. Start it with `python app.py`.";
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * One request to the Python service, retried while the platform reports the
+ * service as still coming up. Network failures and timeouts surface as the
+ * same "unreachable" error the pages render.
+ */
+export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const url = `${API_BASE}${path}`;
+
+  for (let attempt = 0; ; attempt++) {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...init,
+        cache: "no-store",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (error) {
+      // A refused connection means nothing is listening at all; retrying only
+      // stalls the page. A timeout or a dropped connection can be a service
+      // still waking up, so those get another go.
+      const refused =
+        (error as { cause?: { code?: string } })?.cause?.code === "ECONNREFUSED";
+      if (!refused && attempt < WAKE_RETRIES) {
+        await sleep(WAKE_RETRY_DELAY_MS);
+        continue;
+      }
+      throw new ApiError(unreachableMessage(), 503);
+    }
+
+    if (WAKE_STATUSES.has(response.status) && attempt < WAKE_RETRIES) {
+      await sleep(WAKE_RETRY_DELAY_MS);
+      continue;
+    }
+    return response;
   }
 }
 
@@ -43,17 +106,9 @@ export async function fetchProfile(
   username: string,
   posts: number,
 ): Promise<ProfileResponse> {
-  const url = `${API_BASE}/api/profile/${encodeURIComponent(username)}?posts=${posts}`;
-
-  let response: Response;
-  try {
-    response = await fetch(url, { cache: "no-store" });
-  } catch {
-    throw new ApiError(
-      "Can't reach the analysis service. Start it with `python app.py`.",
-      503,
-    );
-  }
+  const response = await apiFetch(
+    `/api/profile/${encodeURIComponent(username)}?posts=${posts}`,
+  );
 
   if (!response.ok) {
     throw new ApiError(
@@ -68,7 +123,7 @@ export async function fetchModelInfo(): Promise<ModelInfo | null> {
   try {
     // Deliberately uncached: retraining changes these numbers, and a page
     // baked while the service was down would advertise it as offline.
-    const response = await fetch(`${API_BASE}/api/model`, { cache: "no-store" });
+    const response = await apiFetch("/api/model");
     if (!response.ok) return null;
     return response.json();
   } catch {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { API_BASE } from "@/lib/api";
+import { apiFetch, unreachableMessage } from "@/lib/api";
 
 /**
  * Forwards every `/api/*` request to the Python service.
@@ -24,7 +24,7 @@ const HOP_BY_HOP = new Set([
 async function proxy(request: Request, path: string[]) {
   const suffix = path.map(encodeURIComponent).join("/");
   const query = new URL(request.url).search;
-  const target = `${API_BASE}/api/${suffix}${query}`;
+  const target = `/api/${suffix}${query}`;
 
   const headers = new Headers();
   request.headers.forEach((value, key) => {
@@ -37,21 +37,14 @@ async function proxy(request: Request, path: string[]) {
 
   let response: Response;
   try {
-    response = await fetch(target, {
+    response = await apiFetch(target, {
       method,
       headers,
       body,
-      cache: "no-store",
       redirect: "manual",
     });
   } catch {
-    return NextResponse.json(
-      {
-        error:
-          "Can't reach the analysis service. Start it with `python app.py`.",
-      },
-      { status: 503 },
-    );
+    return NextResponse.json({ error: unreachableMessage() }, { status: 503 });
   }
 
   const outHeaders = new Headers();

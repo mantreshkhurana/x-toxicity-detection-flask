@@ -143,7 +143,7 @@ See [web/README.md](web/README.md) for the design notes.
 | `x-toxicity-api` | Python | `pip install -r requirements.txt` + train if the model is missing | JSON API |
 | `x-toxicity-web` | Node | `npm ci && npm run build` (rootDir `web`) | the interface |
 
-`x-toxicity-web`'s URL is the app - that is the one to open and share, and it forwards `/api/*` to `x-toxicity-api` for you, exactly like the single port locally. Render injects the API's hostname as `TOXICITY_API_HOST`, and the frontend turns that into an `https://` URL on its own, so there is nothing to wire up by hand. The browser only ever talks to one origin, so no CORS configuration is needed. Gunicorn imports `app:app`, which means the frontend-spawning code in `__main__` never runs on the API service.
+`x-toxicity-web`'s URL is the app - that is the one to open and share, and it forwards `/api/*` to `x-toxicity-api` for you, exactly like the single port locally. Render injects the API service's public URL as `TOXICITY_API_URL` (its `RENDER_EXTERNAL_URL`), so there is nothing to wire up by hand. The private-network address is deliberately not used: free instances can send private-network requests but cannot receive them. The browser only ever talks to one origin, so no CORS configuration is needed. Gunicorn imports `app:app`, which means the frontend-spawning code in `__main__` never runs on the API service.
 
 On Render's free plan both services sleep when idle, so the first request after a nap waits for two cold starts.
 

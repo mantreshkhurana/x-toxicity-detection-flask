@@ -46,10 +46,12 @@ services:
         value: "20"
       - key: NEXT_TELEMETRY_DISABLED
         value: "1"
-      # Render hands over a bare hostname; the frontend turns
-      # TOXICITY_API_HOST into an https:// URL when TOXICITY_API_URL is unset.
-      - key: TOXICITY_API_HOST
+      # The API's public https:// URL. `property: host` would hand over the
+      # private-network name instead (`x-toxicity-api`, plain HTTP on the
+      # service port) — and free instances can send private-network requests
+      # but not receive them, so the private address is unusable on this plan.
+      - key: TOXICITY_API_URL
         fromService:
           name: x-toxicity-api
           type: web
-          property: host
+          envVarKey: RENDER_EXTERNAL_URL
