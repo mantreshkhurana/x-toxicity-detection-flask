@@ -48,10 +48,17 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Keyed off where the API actually is, not off NODE_ENV: a deployed frontend
+ * pointed at a loopback address is exactly the misconfiguration worth naming,
+ * and NODE_ENV was reporting it as a "start python app.py" problem to users who
+ * have no local process to start.
+ */
 export function unreachableMessage() {
-  return process.env.NODE_ENV === "production"
-    ? `Can't reach the analysis service at ${API_BASE}. It may still be starting up — try again in a moment.`
-    : "Can't reach the analysis service. Start it with `python app.py`.";
+  const loopback = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/i.test(API_BASE);
+  return loopback
+    ? `Can't reach the analysis service at ${API_BASE}. Locally, start it with \`python app.py\`; if this is a deployment, set TOXICITY_API_URL to the API's public URL.`
+    : `Can't reach the analysis service at ${API_BASE}. It may still be starting up — try again in a moment.`;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -85,7 +92,14 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
       throw new ApiError(unreachableMessage(), 503);
     }
 
-    if (WAKE_STATUSES.has(response.status) && attempt < WAKE_RETRIES) {
+    // A 502 from the platform's router means "still booting"; a 502 from the
+    // Python service itself is a real answer (it uses that status when X
+    // refuses it). Only the former is worth waiting on — retrying the latter
+    // sat on a genuine error message for six seconds before showing it.
+    const fromPlatform = !(response.headers.get("content-type") || "").includes(
+      "application/json",
+    );
+    if (WAKE_STATUSES.has(response.status) && fromPlatform && attempt < WAKE_RETRIES) {
       await sleep(WAKE_RETRY_DELAY_MS);
       continue;
     }

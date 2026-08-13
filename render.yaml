@@ -31,6 +31,9 @@ services:
         value: "1"
       - key: TOXICITY_BACKEND
         value: "linear"
+      # Where `/` redirects a browser that opened the API host by mistake.
+      - key: WEB_URL
+        value: "https://x-toxicity-web.onrender.com"
 
   - type: web
     name: x-toxicity-web
@@ -46,12 +49,17 @@ services:
         value: "20"
       - key: NEXT_TELEMETRY_DISABLED
         value: "1"
-      # The API's public https:// URL. `property: host` would hand over the
-      # private-network name instead (`x-toxicity-api`, plain HTTP on the
-      # service port) — and free instances can send private-network requests
-      # but not receive them, so the private address is unusable on this plan.
+      # The API's public https:// URL, written out rather than referenced.
+      #
+      # `property: host` would hand over the private-network name instead
+      # (`x-toxicity-api`, plain HTTP on the service port) — and free instances
+      # can send private-network requests but not receive them, so the private
+      # address is unusable on this plan. `envVarKey: RENDER_EXTERNAL_URL` only
+      # resolves env vars the referenced service *declares*; RENDER_EXTERNAL_URL
+      # is injected at runtime, so it resolved to empty and the frontend fell
+      # back to 127.0.0.1:5000 — every request died as "can't reach the service".
+      #
+      # The .onrender.com hostname is derived from the service name above, so
+      # this only changes if you rename the API service.
       - key: TOXICITY_API_URL
-        fromService:
-          name: x-toxicity-api
-          type: web
-          envVarKey: RENDER_EXTERNAL_URL
+        value: "https://x-toxicity-api.onrender.com"

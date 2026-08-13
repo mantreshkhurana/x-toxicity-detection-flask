@@ -13,6 +13,7 @@ import html as html_lib
 import socket
 import subprocess
 import sys
+import time
 from flask import Flask, jsonify, redirect, request
 import requests
 from dotenv import load_dotenv
@@ -128,6 +129,67 @@ def _resolve_port(preferred, label, host="127.0.0.1"):
 
 SYNDICATION_URL = "https://syndication.twitter.com/srv/timeline-profile/screen-name/{username}"
 
+# X rate-limits by IP, and a shared datacenter address (any PaaS free tier) burns
+# through the allowance far faster than a home connection — a single 429 there is
+# routine rather than a sign of abuse. Three things make it survivable: retrying
+# past the short-lived limits, not re-fetching a timeline we already hold, and an
+# escape hatch for an outbound address that isn't rate-limited.
+SCRAPE_ATTEMPTS = 3
+SCRAPE_BACKOFF_SECONDS = 1.5
+CACHE_TTL_SECONDS = int(os.getenv('TOXICITY_CACHE_TTL', '600'))
+CACHE_MAX_ENTRIES = 256
+
+# Same Chrome build, three platforms. The endpoint serves embedded-timeline
+# widgets, so a browser UA is what it expects; varying it costs nothing.
+USER_AGENTS = (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+)
+
+
+def _outbound_proxies():
+    """An optional proxy for the X request only.
+
+    Nothing in code can talk an IP block out of existing, so this is the one
+    real fix when the host's own address is limited: point it at an address
+    that isn't. Unset by default — the direct request is tried as before.
+    """
+    proxy = os.getenv('TOXICITY_HTTP_PROXY', '').strip()
+    return {'http': proxy, 'https': proxy} if proxy else None
+
+
+# username -> (fetched_at, tweets, user_info). A timeline is the slow, rate-limited
+# half of a request; the scoring underneath is cheap and re-runs on every call.
+_timeline_cache = {}
+
+
+def _cache_get(key, count, allow_stale=False):
+    """A cached timeline, or None.
+
+    Expired entries are kept rather than dropped: once X starts refusing us, the
+    last good timeline is the only thing standing between the user and an error
+    page, and `allow_stale` is how the failure path reaches it.
+    """
+    entry = _timeline_cache.get(key)
+    if not entry:
+        return None
+    fetched_at, tweets, user_info = entry
+    fresh = (datetime.now() - fetched_at).total_seconds() <= CACHE_TTL_SECONDS
+    if not fresh and not allow_stale:
+        return None
+    # A cached fetch of 20 posts answers a request for 5, but not one for 50.
+    if len(tweets) < count:
+        return None
+    return tweets[:count], user_info
+
+
+def _cache_put(key, tweets, user_info):
+    if len(_timeline_cache) >= CACHE_MAX_ENTRIES:
+        oldest = min(_timeline_cache, key=lambda k: _timeline_cache[k][0])
+        _timeline_cache.pop(oldest, None)
+    _timeline_cache[key] = (datetime.now(), tweets, user_info)
+
 
 def _parse_created_at(value):
     if not value:
@@ -145,20 +207,42 @@ def scrape_nitter_tweets(username, count=10):
     syndication endpoint is what Twitter's own embedded-timeline widgets use —
     public, unauthenticated, returns a full tweet schema inside __NEXT_DATA__.
     """
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
+    url = SYNDICATION_URL.format(username=username)
+    proxies = _outbound_proxies()
+    response = None
+    network_error = None
 
-    try:
-        response = requests.get(
-            SYNDICATION_URL.format(username=username), headers=headers, timeout=15
-        )
-    except requests.RequestException as e:
-        raise Exception(f"Network error: {e}")
+    # X's limits here are short — a second or two apart is often enough for the
+    # retry to land, so one 429 is not worth surfacing as a failed analysis.
+    for attempt in range(SCRAPE_ATTEMPTS):
+        if attempt:
+            time.sleep(SCRAPE_BACKOFF_SECONDS * (2 ** (attempt - 1)))
 
-    if response.status_code == 429:
+        headers = {
+            'User-Agent': USER_AGENTS[attempt % len(USER_AGENTS)],
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://platform.twitter.com/',
+        }
+
+        try:
+            response = requests.get(url, headers=headers, timeout=15, proxies=proxies)
+        except requests.RequestException as e:
+            network_error = e
+            continue
+
+        network_error = None
+        # 404 is a settled answer; retrying it only makes the user wait.
+        if response.status_code not in (429, 503):
+            break
+
+    if response is None:
+        raise Exception(f"Network error: {network_error}")
+
+    if response.status_code in (429, 503):
         raise Exception(
-            "X is rate-limiting this IP right now. Wait a few minutes and try again."
+            "X is rate-limiting this server's IP. Wait a few minutes and try "
+            "again — or set TOXICITY_HTTP_PROXY to route the request elsewhere."
         )
 
     if response.status_code == 404:
@@ -386,10 +470,22 @@ def api_profile(username):
     except (TypeError, ValueError):
         posts = 20
 
-    try:
-        tweets, user_info = scrape_nitter_tweets(username, posts)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 502
+    key = username.lower()
+    cached = _cache_get(key, posts)
+    if cached:
+        tweets, user_info = cached
+    else:
+        try:
+            tweets, user_info = scrape_nitter_tweets(username, posts)
+        except Exception as e:
+            # A stale timeline beats an error page when X is refusing us: the
+            # cache only holds what it already served, so nothing is invented.
+            stale = _cache_get(key, posts, allow_stale=True)
+            if not stale:
+                return jsonify({'error': str(e)}), 502
+            tweets, user_info = stale
+        else:
+            _cache_put(key, tweets, user_info)
 
     if not tweets:
         return jsonify({'error': f"No posts found for @{username}"}), 404
